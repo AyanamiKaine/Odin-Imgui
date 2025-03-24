@@ -103,7 +103,24 @@ def copy(from_path: str, files: typing.List[str], to_path: str):
 	for file in files:
 		shutil.copy(path.join(from_path, file), to_path)
 
+# glob copy backported for python 3.9
+def glob_copy_39(root_dir: str, glob_pattern: str, dest_dir: str):
+	real_pattern = os.path.join(root_dir, glob_pattern)
+	the_files = glob(real_pattern)
+
+	# strip root_dir
+	results = []
+	for item in the_files:
+		results.append(item[len(root_dir)+1:])
+
+	copy(root_dir, results, dest_dir)
+	return results
+
 def glob_copy(root_dir: str, glob_pattern: str, dest_dir: str):
+	version_info = sys.version_info
+	if version_info.major == 3 and version_info.minor == 9:
+		return glob_copy_39(root_dir, glob_pattern, dest_dir)
+
 	the_files = glob(root_dir=root_dir, pathname=glob_pattern)
 	copy(root_dir, the_files, dest_dir)
 	return the_files
