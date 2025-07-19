@@ -983,6 +983,7 @@ _imgui_allowed_typedefs = [
 	"ImGuiMemAllocFunc",
 	"ImGuiMemFreeFunc",
 	"ImGuiSelectionUserData",
+	"ImGuiErrorCallback",
 
 	# imgui_internal.h
 	"ImGuiTableColumnIdx",

@@ -11,7 +11,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_dx11.h
-// Last checked `v1.91.2-docking` (6df1a06)
+// Last checked `v1.91.3-docking` (6df1a06)
 @(link_prefix="ImGui_ImplDX11_")
 foreign lib {
 	Init           :: proc(device: ^d3d11.IDevice, device_context: ^d3d11.IDeviceContext) -> bool ---

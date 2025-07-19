@@ -326,21 +326,22 @@ LocKey :: enum c.int { // Forward declared enum type ImGuiLocKey
 
 DebugLogFlags :: bit_set[DebugLogFlag; c.int]
 DebugLogFlag :: enum c.int {
-	EventActiveId      = 0,
-	EventFocus         = 1,
-	EventPopup         = 2,
-	EventNav           = 3,
-	EventClipper       = 4,
-	EventSelection     = 5,
-	EventIO            = 6,
-	EventInputRouting  = 7,
-	EventDocking       = 8,
-	EventViewport      = 9,
+	EventError         = 0,  // Error submitted by IM_ASSERT_USER_ERROR()
+	EventActiveId      = 1,
+	EventFocus         = 2,
+	EventPopup         = 3,
+	EventNav           = 4,
+	EventClipper       = 5,
+	EventSelection     = 6,
+	EventIO            = 7,
+	EventInputRouting  = 8,
+	EventDocking       = 9,
+	EventViewport      = 10,
 	OutputToTTY        = 20, // Also send output to TTY
 	OutputToTestEngine = 21, // Also send output to Test Engine
 }
 
-DebugLogFlags_EventMask_ :: DebugLogFlags{.EventActiveId,.EventFocus,.EventPopup,.EventNav,.EventClipper,.EventSelection,.EventIO,.EventInputRouting,.EventDocking,.EventViewport}
+DebugLogFlags_EventMask_ :: DebugLogFlags{.EventError,.EventActiveId,.EventFocus,.EventPopup,.EventNav,.EventClipper,.EventSelection,.EventIO,.EventInputRouting,.EventDocking,.EventViewport}
 
 ContextHookType :: enum c.int {
 	NewFramePre,
@@ -870,8 +871,11 @@ TreeNodeStackData :: struct {
 	NavRect:   Rect,          // Used for nav landing
 }
 
-StackSizes :: struct {
+// sizeof() = 20
+ErrorRecoveryState :: struct {
+	SizeOfWindowStack:     c.short,
 	SizeOfIDStack:         c.short,
+	SizeOfTreeStack:       c.short,
 	SizeOfColorStack:      c.short,
 	SizeOfStyleVarStack:   c.short,
 	SizeOfFontStack:       c.short,
@@ -886,8 +890,8 @@ StackSizes :: struct {
 WindowStackData :: struct {
 	Window_:                  ^Window,
 	ParentLastItemDataBackup: LastItemData,
-	StackSizesOnBegin:        StackSizes,   // Store size of various stacks for asserting
-	DisabledOverrideReenable: bool,         // Non-child window override disabled flag
+	StackSizesInBegin:        ErrorRecoveryState, // Store size of various stacks for asserting
+	DisabledOverrideReenable: bool,               // Non-child window override disabled flag
 }
 
 ShrinkWidthItem :: struct {
@@ -1599,8 +1603,8 @@ Context :: struct {
 	ComboPreviewData:                ComboPreviewData,
 	WindowResizeBorderExpectedRect:  Rect,                      // Expected border rect, switch to relative edit if moving
 	WindowResizeRelativeMode:        bool,
-	ScrollbarSeekMode:               c.short,                   // 0: relative, -1/+1: prev/next page.
-	ScrollbarClickDeltaToGrabCenter: f32,                       // Distance between mouse and center of grab box, normalized in parent space. Use storage?
+	ScrollbarSeekMode:               c.short,                   // 0: scroll to clicked location, -1/+1: prev/next page.
+	ScrollbarClickDeltaToGrabCenter: f32,                       // When scrolling to mouse location: distance between mouse and center of grab box, normalized in parent space.
 	SliderGrabClickOffset:           f32,
 	SliderCurrentAccum:              f32,                       // Accumulated slider delta when using navigation controls.
 	SliderCurrentAccumDirty:         bool,                      // Has the accumulated slider delta changed since last time we tried to apply it?
@@ -1611,6 +1615,7 @@ Context :: struct {
 	DisabledStackSize:               c.short,
 	LockMarkEdited:                  c.short,
 	TooltipOverrideCount:            c.short,
+	TooltipPreviousWindow:           ^Window,                   // Window of last tooltip submitted during the frame
 	ClipboardHandlerData:            Vector_char,               // If no custom clipboard handler is defined
 	MenusIdSubmittedThisFrame:       Vector_ID,                 // A list of menu IDs that were rendered at least once
 	TypingSelectState:               TypingSelectState,         // State for GetTypingSelectRequest()
@@ -1645,11 +1650,21 @@ Context :: struct {
 	LogDepthRef:             c.int,
 	LogDepthToExpand:        c.int,
 	LogDepthToExpandDefault: c.int,      // Default/stored value for LogDepthMaxExpand if not specified in the LogXXX function call.
+	// Error Handling
+	ErrorCallback:                     ErrorCallback,       // = NULL. May be exposed in public API eventually.
+	ErrorCallbackUserData:             rawptr,              // = NULL
+	ErrorTooltipLockedPos:             Vec2,
+	ErrorFirst:                        bool,
+	ErrorCountCurrentFrame:            c.int,               // [Internal] Number of errors submitted this frame.
+	StackSizesInNewFrame:              ErrorRecoveryState,  // [Internal]
+	StackSizesInBeginForCurrentWindow: ^ErrorRecoveryState, // [Internal]
 	// Debug Tools
 	// (some of the highly frequently used data are interleaved in other structures above: DebugBreakXXX fields, DebugHookIdInfo, DebugLocateId etc.)
+	DebugDrawIdConflictsCount:      c.int,          // Locked count (preserved when holding CTRL)
 	DebugLogFlags_:                 DebugLogFlags,
 	DebugLogBuf:                    TextBuffer,
 	DebugLogIndex:                  TextIndex,
+	DebugLogSkippedErrors:          c.int,
 	DebugLogAutoDisableFlags:       DebugLogFlags,
 	DebugLogAutoDisableFrames:      u8,
 	DebugLocateFrames:              u8,             // For DebugLocateItemOnHover(). This is used together with DebugLocateId which is in a hot/cached spot above.
@@ -1873,8 +1888,9 @@ TabItem :: struct {
 	WantClose:         bool,         // Marked as closed by SetTabItemClosed()
 }
 
-// Storage for a tab bar (sizeof() 152 bytes)
+// Storage for a tab bar (sizeof() 160 bytes)
 TabBar :: struct {
+	Window_:                         ^Window,
 	Tabs:                            Vector_TabItem,
 	Flags:                           TabBarFlags,
 	ID_:                             ID,             // Zero for tab-bars used by docking
@@ -2327,8 +2343,6 @@ foreign lib {
 	@(link_name="ImGuiInputTextState_ReloadUserBufAndMoveToEnd")     InputTextState_ReloadUserBufAndMoveToEnd     :: proc(self: ^InputTextState)                                                ---
 	@(link_name="ImGuiNextWindowData_ClearFlags")                    NextWindowData_ClearFlags                    :: proc(self: ^NextWindowData)                                                ---
 	@(link_name="ImGuiNextItemData_ClearFlags")                      NextItemData_ClearFlags                      :: proc(self: ^NextItemData)                                                  --- // Also cleared manually by ItemAdd()!
-	@(link_name="ImGuiStackSizes_SetToContextState")                 StackSizes_SetToContextState                 :: proc(self: ^StackSizes, ctx: ^Context)                                     ---
-	@(link_name="ImGuiStackSizes_CompareWithContextState")           StackSizes_CompareWithContextState           :: proc(self: ^StackSizes, ctx: ^Context)                                     ---
 	@(link_name="ImGuiKeyRoutingTable_Clear")                        KeyRoutingTable_Clear                        :: proc(self: ^KeyRoutingTable)                                               ---
 	@(link_name="ImGuiListClipperRange_FromIndices")                 ListClipperRange_FromIndices                 :: proc(min: c.int, max: c.int) -> ListClipperRange                           ---
 	@(link_name="ImGuiListClipperRange_FromPositions")               ListClipperRange_FromPositions               :: proc(y1: f32, y2: f32, off_min: c.int, off_max: c.int) -> ListClipperRange ---
@@ -2781,6 +2795,7 @@ foreign lib {
 	@(link_name="ImGui_TabBarRemoveTab")                                  TabBarRemoveTab                                  :: proc(tab_bar: ^TabBar, tab_id: ID)                                                                                                                                                                          ---
 	@(link_name="ImGui_TabBarCloseTab")                                   TabBarCloseTab                                   :: proc(tab_bar: ^TabBar, tab: ^TabItem)                                                                                                                                                                       ---
 	@(link_name="ImGui_TabBarQueueFocus")                                 TabBarQueueFocus                                 :: proc(tab_bar: ^TabBar, tab: ^TabItem)                                                                                                                                                                       ---
+	@(link_name="ImGui_TabBarQueueFocusStr")                              TabBarQueueFocusStr                              :: proc(tab_bar: ^TabBar, tab_name: cstring)                                                                                                                                                                   ---
 	@(link_name="ImGui_TabBarQueueReorder")                               TabBarQueueReorder                               :: proc(tab_bar: ^TabBar, tab: ^TabItem, offset: c.int)                                                                                                                                                        ---
 	@(link_name="ImGui_TabBarQueueReorderFromMousePos")                   TabBarQueueReorderFromMousePos                   :: proc(tab_bar: ^TabBar, tab: ^TabItem, mouse_pos: Vec2)                                                                                                                                                      ---
 	@(link_name="ImGui_TabBarProcessReorder")                             TabBarProcessReorder                             :: proc(tab_bar: ^TabBar) -> bool                                                                                                                                                                              ---
@@ -2848,6 +2863,7 @@ foreign lib {
 	@(link_name="ImGui_DataTypeApplyFromText") DataTypeApplyFromText :: proc(buf: cstring, data_type: DataType, p_data: rawptr, format: cstring, p_data_when_empty: rawptr = nil) -> bool ---
 	@(link_name="ImGui_DataTypeCompare")       DataTypeCompare       :: proc(data_type: DataType, arg_1: rawptr, arg_2: rawptr) -> c.int                                                  ---
 	@(link_name="ImGui_DataTypeClamp")         DataTypeClamp         :: proc(data_type: DataType, p_data: rawptr, p_min: rawptr, p_max: rawptr) -> bool                                   ---
+	@(link_name="ImGui_DataTypeIsZero")        DataTypeIsZero        :: proc(data_type: DataType, p_data: rawptr) -> bool                                                                 ---
 	// InputText
 	@(link_name="ImGui_InputTextWithHintAndSize") InputTextWithHintAndSize :: proc(label: cstring, hint: cstring, buf: cstring, buf_size: c.int, size_arg: Vec2, flags: InputTextFlags, callback: InputTextCallback = nil, user_data: rawptr = nil) -> bool ---
 	@(link_name="ImGui_InputTextDeactivateHook")  InputTextDeactivateHook  :: proc(id: ID)                                                                                                                                                                  ---
@@ -2869,55 +2885,61 @@ foreign lib {
 	@(link_name="ImGui_GcCompactTransientMiscBuffers")   GcCompactTransientMiscBuffers   :: proc()                ---
 	@(link_name="ImGui_GcCompactTransientWindowBuffers") GcCompactTransientWindowBuffers :: proc(window: ^Window) ---
 	@(link_name="ImGui_GcAwakeTransientWindowBuffers")   GcAwakeTransientWindowBuffers   :: proc(window: ^Window) ---
+	// Error handling, State Recovery
+	@(link_name="ImGui_ErrorLog")                                            ErrorLog                                            :: proc(msg: cstring) -> bool           ---
+	@(link_name="ImGui_ErrorRecoveryStoreState")                             ErrorRecoveryStoreState                             :: proc(state_out: ^ErrorRecoveryState) ---
+	@(link_name="ImGui_ErrorRecoveryTryToRecoverState")                      ErrorRecoveryTryToRecoverState                      :: proc(state_in: ^ErrorRecoveryState)  ---
+	@(link_name="ImGui_ErrorRecoveryTryToRecoverWindowState")                ErrorRecoveryTryToRecoverWindowState                :: proc(state_in: ^ErrorRecoveryState)  ---
+	@(link_name="ImGui_ErrorCheckUsingSetCursorPosToExtendParentBoundaries") ErrorCheckUsingSetCursorPosToExtendParentBoundaries :: proc()                               ---
+	@(link_name="ImGui_ErrorCheckEndFrameFinalizeErrorTooltip")              ErrorCheckEndFrameFinalizeErrorTooltip              :: proc()                               ---
+	@(link_name="ImGui_BeginErrorTooltip")                                   BeginErrorTooltip                                   :: proc() -> bool                       ---
+	@(link_name="ImGui_EndErrorTooltip")                                     EndErrorTooltip                                     :: proc()                               ---
 	// Debug Tools
-	@(link_name="ImGui_DebugAllocHook")                                      DebugAllocHook                                      :: proc(info: ^DebugAllocInfo, frame_count: c.int, ptr: rawptr, size: c.size_t)                                                             --- // size >= 0 : alloc, size = -1 : free
-	@(link_name="ImGui_ErrorCheckEndFrameRecover")                           ErrorCheckEndFrameRecover                           :: proc(log_callback: ErrorLogCallback, user_data: rawptr = nil)                                                                            ---
-	@(link_name="ImGui_ErrorCheckEndWindowRecover")                          ErrorCheckEndWindowRecover                          :: proc(log_callback: ErrorLogCallback, user_data: rawptr = nil)                                                                            ---
-	@(link_name="ImGui_ErrorCheckUsingSetCursorPosToExtendParentBoundaries") ErrorCheckUsingSetCursorPosToExtendParentBoundaries :: proc()                                                                                                                                   ---
-	@(link_name="ImGui_DebugDrawCursorPos")                                  DebugDrawCursorPos                                  :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
-	@(link_name="ImGui_DebugDrawLineExtents")                                DebugDrawLineExtents                                :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
-	@(link_name="ImGui_DebugDrawItemRect")                                   DebugDrawItemRect                                   :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
-	@(link_name="ImGui_DebugTextUnformattedWithLocateItem")                  DebugTextUnformattedWithLocateItem                  :: proc(line_begin: cstring, line_end: cstring)                                                                                             ---
-	@(link_name="ImGui_DebugLocateItem")                                     DebugLocateItem                                     :: proc(target_id: ID)                                                                                                                      --- // Call sparingly: only 1 at the same time!
-	@(link_name="ImGui_DebugLocateItemOnHover")                              DebugLocateItemOnHover                              :: proc(target_id: ID)                                                                                                                      --- // Only call on reaction to a mouse Hover: because only 1 at the same time!
-	@(link_name="ImGui_DebugLocateItemResolveWithLastItem")                  DebugLocateItemResolveWithLastItem                  :: proc()                                                                                                                                   ---
-	@(link_name="ImGui_DebugBreakClearData")                                 DebugBreakClearData                                 :: proc()                                                                                                                                   ---
-	@(link_name="ImGui_DebugBreakButton")                                    DebugBreakButton                                    :: proc(label: cstring, description_of_location: cstring) -> bool                                                                           ---
-	@(link_name="ImGui_DebugBreakButtonTooltip")                             DebugBreakButtonTooltip                             :: proc(keyboard_only: bool, description_of_location: cstring)                                                                              ---
-	@(link_name="ImGui_ShowFontAtlas")                                       ShowFontAtlas                                       :: proc(atlas: ^FontAtlas)                                                                                                                  ---
-	@(link_name="ImGui_DebugHookIdInfo")                                     DebugHookIdInfo                                     :: proc(id: ID, data_type: DataType, data_id: rawptr, data_id_end: rawptr)                                                                  ---
-	@(link_name="ImGui_DebugNodeColumns")                                    DebugNodeColumns                                    :: proc(columns: ^OldColumns)                                                                                                               ---
-	@(link_name="ImGui_DebugNodeDockNode")                                   DebugNodeDockNode                                   :: proc(node: ^DockNode, label: cstring)                                                                                                    ---
-	@(link_name="ImGui_DebugNodeDrawList")                                   DebugNodeDrawList                                   :: proc(window: ^Window, viewport: ^ViewportP, draw_list: ^DrawList, label: cstring)                                                        ---
-	@(link_name="ImGui_DebugNodeDrawCmdShowMeshAndBoundingBox")              DebugNodeDrawCmdShowMeshAndBoundingBox              :: proc(out_draw_list: ^DrawList, draw_list: ^DrawList, draw_cmd: ^DrawCmd, show_mesh: bool, show_aabb: bool)                               ---
-	@(link_name="ImGui_DebugNodeFont")                                       DebugNodeFont                                       :: proc(font: ^Font)                                                                                                                        ---
-	@(link_name="ImGui_DebugNodeFontGlyph")                                  DebugNodeFontGlyph                                  :: proc(font: ^Font, glyph: ^FontGlyph)                                                                                                     ---
-	@(link_name="ImGui_DebugNodeStorage")                                    DebugNodeStorage                                    :: proc(storage: ^Storage, label: cstring)                                                                                                  ---
-	@(link_name="ImGui_DebugNodeTabBar")                                     DebugNodeTabBar                                     :: proc(tab_bar: ^TabBar, label: cstring)                                                                                                   ---
-	@(link_name="ImGui_DebugNodeTable")                                      DebugNodeTable                                      :: proc(table: ^Table)                                                                                                                      ---
-	@(link_name="ImGui_DebugNodeTableSettings")                              DebugNodeTableSettings                              :: proc(settings: ^TableSettings)                                                                                                           ---
-	@(link_name="ImGui_DebugNodeTypingSelectState")                          DebugNodeTypingSelectState                          :: proc(state: ^TypingSelectState)                                                                                                          ---
-	@(link_name="ImGui_DebugNodeMultiSelectState")                           DebugNodeMultiSelectState                           :: proc(state: ^MultiSelectState)                                                                                                           ---
-	@(link_name="ImGui_DebugNodeWindow")                                     DebugNodeWindow                                     :: proc(window: ^Window, label: cstring)                                                                                                    ---
-	@(link_name="ImGui_DebugNodeWindowSettings")                             DebugNodeWindowSettings                             :: proc(settings: ^WindowSettings)                                                                                                          ---
-	@(link_name="ImGui_DebugNodeWindowsList")                                DebugNodeWindowsList                                :: proc(windows: ^Vector_WindowPtr, label: cstring)                                                                                         ---
-	@(link_name="ImGui_DebugNodeWindowsListByBeginStackParent")              DebugNodeWindowsListByBeginStackParent              :: proc(windows: ^^Window, windows_size: c.int, parent_in_begin_stack: ^Window)                                                             ---
-	@(link_name="ImGui_DebugNodeViewport")                                   DebugNodeViewport                                   :: proc(viewport: ^ViewportP)                                                                                                               ---
-	@(link_name="ImGui_DebugNodePlatformMonitor")                            DebugNodePlatformMonitor                            :: proc(monitor: ^PlatformMonitor, label: cstring, idx: c.int)                                                                              ---
-	@(link_name="ImGui_DebugRenderKeyboardPreview")                          DebugRenderKeyboardPreview                          :: proc(draw_list: ^DrawList)                                                                                                               ---
-	@(link_name="ImGui_DebugRenderViewportThumbnail")                        DebugRenderViewportThumbnail                        :: proc(draw_list: ^DrawList, viewport: ^ViewportP, bb: Rect)                                                                               ---
-	@(link_name="ImGui_SetItemUsingMouseWheel")                              SetItemUsingMouseWheel                              :: proc()                                                                                                                                   --- // Changed in 1.89
-	@(link_name="ImGui_TreeNodeBehaviorIsOpen")                              TreeNodeBehaviorIsOpen                              :: proc(id: ID, flags: TreeNodeFlags = {}) -> bool                                                                                          --- // Renamed in 1.89
-	@(link_name="cImFontAtlasGetBuilderForStbTruetype")                      cImFontAtlasGetBuilderForStbTruetype                :: proc() -> ^FontBuilderIO                                                                                                                 ---
-	@(link_name="cImFontAtlasUpdateConfigDataPointers")                      cImFontAtlasUpdateConfigDataPointers                :: proc(atlas: ^FontAtlas)                                                                                                                  ---
-	@(link_name="cImFontAtlasBuildInit")                                     cImFontAtlasBuildInit                               :: proc(atlas: ^FontAtlas)                                                                                                                  ---
-	@(link_name="cImFontAtlasBuildSetupFont")                                cImFontAtlasBuildSetupFont                          :: proc(atlas: ^FontAtlas, font: ^Font, font_config: ^FontConfig, ascent: f32, descent: f32)                                                ---
-	@(link_name="cImFontAtlasBuildPackCustomRects")                          cImFontAtlasBuildPackCustomRects                    :: proc(atlas: ^FontAtlas, stbrp_context_opaque: rawptr)                                                                                    ---
-	@(link_name="cImFontAtlasBuildFinish")                                   cImFontAtlasBuildFinish                             :: proc(atlas: ^FontAtlas)                                                                                                                  ---
-	@(link_name="cImFontAtlasBuildRender8bppRectFromString")                 cImFontAtlasBuildRender8bppRectFromString           :: proc(atlas: ^FontAtlas, x: c.int, y: c.int, w: c.int, h: c.int, in_str: cstring, in_marker_char: c.char, in_marker_pixel_value: c.uchar) ---
-	@(link_name="cImFontAtlasBuildRender32bppRectFromString")                cImFontAtlasBuildRender32bppRectFromString          :: proc(atlas: ^FontAtlas, x: c.int, y: c.int, w: c.int, h: c.int, in_str: cstring, in_marker_char: c.char, in_marker_pixel_value: c.uint)  ---
-	@(link_name="cImFontAtlasBuildMultiplyCalcLookupTable")                  cImFontAtlasBuildMultiplyCalcLookupTable            :: proc(out_table: ^[256]c.uchar, in_multiply_factor: f32)                                                                                  ---
-	@(link_name="cImFontAtlasBuildMultiplyRectAlpha8")                       cImFontAtlasBuildMultiplyRectAlpha8                 :: proc(table: ^[256]c.uchar, pixels: ^c.uchar, x: c.int, y: c.int, w: c.int, h: c.int, stride: c.int)                                      ---
+	@(link_name="ImGui_DebugAllocHook")                         DebugAllocHook                             :: proc(info: ^DebugAllocInfo, frame_count: c.int, ptr: rawptr, size: c.size_t)                                                             --- // size >= 0 : alloc, size = -1 : free
+	@(link_name="ImGui_DebugDrawCursorPos")                     DebugDrawCursorPos                         :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
+	@(link_name="ImGui_DebugDrawLineExtents")                   DebugDrawLineExtents                       :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
+	@(link_name="ImGui_DebugDrawItemRect")                      DebugDrawItemRect                          :: proc(col: u32 = u32(0xff0000ff))                                                                                                         ---
+	@(link_name="ImGui_DebugTextUnformattedWithLocateItem")     DebugTextUnformattedWithLocateItem         :: proc(line_begin: cstring, line_end: cstring)                                                                                             ---
+	@(link_name="ImGui_DebugLocateItem")                        DebugLocateItem                            :: proc(target_id: ID)                                                                                                                      --- // Call sparingly: only 1 at the same time!
+	@(link_name="ImGui_DebugLocateItemOnHover")                 DebugLocateItemOnHover                     :: proc(target_id: ID)                                                                                                                      --- // Only call on reaction to a mouse Hover: because only 1 at the same time!
+	@(link_name="ImGui_DebugLocateItemResolveWithLastItem")     DebugLocateItemResolveWithLastItem         :: proc()                                                                                                                                   ---
+	@(link_name="ImGui_DebugBreakClearData")                    DebugBreakClearData                        :: proc()                                                                                                                                   ---
+	@(link_name="ImGui_DebugBreakButton")                       DebugBreakButton                           :: proc(label: cstring, description_of_location: cstring) -> bool                                                                           ---
+	@(link_name="ImGui_DebugBreakButtonTooltip")                DebugBreakButtonTooltip                    :: proc(keyboard_only: bool, description_of_location: cstring)                                                                              ---
+	@(link_name="ImGui_ShowFontAtlas")                          ShowFontAtlas                              :: proc(atlas: ^FontAtlas)                                                                                                                  ---
+	@(link_name="ImGui_DebugHookIdInfo")                        DebugHookIdInfo                            :: proc(id: ID, data_type: DataType, data_id: rawptr, data_id_end: rawptr)                                                                  ---
+	@(link_name="ImGui_DebugNodeColumns")                       DebugNodeColumns                           :: proc(columns: ^OldColumns)                                                                                                               ---
+	@(link_name="ImGui_DebugNodeDockNode")                      DebugNodeDockNode                          :: proc(node: ^DockNode, label: cstring)                                                                                                    ---
+	@(link_name="ImGui_DebugNodeDrawList")                      DebugNodeDrawList                          :: proc(window: ^Window, viewport: ^ViewportP, draw_list: ^DrawList, label: cstring)                                                        ---
+	@(link_name="ImGui_DebugNodeDrawCmdShowMeshAndBoundingBox") DebugNodeDrawCmdShowMeshAndBoundingBox     :: proc(out_draw_list: ^DrawList, draw_list: ^DrawList, draw_cmd: ^DrawCmd, show_mesh: bool, show_aabb: bool)                               ---
+	@(link_name="ImGui_DebugNodeFont")                          DebugNodeFont                              :: proc(font: ^Font)                                                                                                                        ---
+	@(link_name="ImGui_DebugNodeFontGlyph")                     DebugNodeFontGlyph                         :: proc(font: ^Font, glyph: ^FontGlyph)                                                                                                     ---
+	@(link_name="ImGui_DebugNodeStorage")                       DebugNodeStorage                           :: proc(storage: ^Storage, label: cstring)                                                                                                  ---
+	@(link_name="ImGui_DebugNodeTabBar")                        DebugNodeTabBar                            :: proc(tab_bar: ^TabBar, label: cstring)                                                                                                   ---
+	@(link_name="ImGui_DebugNodeTable")                         DebugNodeTable                             :: proc(table: ^Table)                                                                                                                      ---
+	@(link_name="ImGui_DebugNodeTableSettings")                 DebugNodeTableSettings                     :: proc(settings: ^TableSettings)                                                                                                           ---
+	@(link_name="ImGui_DebugNodeTypingSelectState")             DebugNodeTypingSelectState                 :: proc(state: ^TypingSelectState)                                                                                                          ---
+	@(link_name="ImGui_DebugNodeMultiSelectState")              DebugNodeMultiSelectState                  :: proc(state: ^MultiSelectState)                                                                                                           ---
+	@(link_name="ImGui_DebugNodeWindow")                        DebugNodeWindow                            :: proc(window: ^Window, label: cstring)                                                                                                    ---
+	@(link_name="ImGui_DebugNodeWindowSettings")                DebugNodeWindowSettings                    :: proc(settings: ^WindowSettings)                                                                                                          ---
+	@(link_name="ImGui_DebugNodeWindowsList")                   DebugNodeWindowsList                       :: proc(windows: ^Vector_WindowPtr, label: cstring)                                                                                         ---
+	@(link_name="ImGui_DebugNodeWindowsListByBeginStackParent") DebugNodeWindowsListByBeginStackParent     :: proc(windows: ^^Window, windows_size: c.int, parent_in_begin_stack: ^Window)                                                             ---
+	@(link_name="ImGui_DebugNodeViewport")                      DebugNodeViewport                          :: proc(viewport: ^ViewportP)                                                                                                               ---
+	@(link_name="ImGui_DebugNodePlatformMonitor")               DebugNodePlatformMonitor                   :: proc(monitor: ^PlatformMonitor, label: cstring, idx: c.int)                                                                              ---
+	@(link_name="ImGui_DebugRenderKeyboardPreview")             DebugRenderKeyboardPreview                 :: proc(draw_list: ^DrawList)                                                                                                               ---
+	@(link_name="ImGui_DebugRenderViewportThumbnail")           DebugRenderViewportThumbnail               :: proc(draw_list: ^DrawList, viewport: ^ViewportP, bb: Rect)                                                                               ---
+	@(link_name="ImGui_SetItemUsingMouseWheel")                 SetItemUsingMouseWheel                     :: proc()                                                                                                                                   --- // Changed in 1.89
+	@(link_name="ImGui_TreeNodeBehaviorIsOpen")                 TreeNodeBehaviorIsOpen                     :: proc(id: ID, flags: TreeNodeFlags = {}) -> bool                                                                                          --- // Renamed in 1.89
+	@(link_name="cImFontAtlasGetBuilderForStbTruetype")         cImFontAtlasGetBuilderForStbTruetype       :: proc() -> ^FontBuilderIO                                                                                                                 ---
+	@(link_name="cImFontAtlasUpdateConfigDataPointers")         cImFontAtlasUpdateConfigDataPointers       :: proc(atlas: ^FontAtlas)                                                                                                                  ---
+	@(link_name="cImFontAtlasBuildInit")                        cImFontAtlasBuildInit                      :: proc(atlas: ^FontAtlas)                                                                                                                  ---
+	@(link_name="cImFontAtlasBuildSetupFont")                   cImFontAtlasBuildSetupFont                 :: proc(atlas: ^FontAtlas, font: ^Font, font_config: ^FontConfig, ascent: f32, descent: f32)                                                ---
+	@(link_name="cImFontAtlasBuildPackCustomRects")             cImFontAtlasBuildPackCustomRects           :: proc(atlas: ^FontAtlas, stbrp_context_opaque: rawptr)                                                                                    ---
+	@(link_name="cImFontAtlasBuildFinish")                      cImFontAtlasBuildFinish                    :: proc(atlas: ^FontAtlas)                                                                                                                  ---
+	@(link_name="cImFontAtlasBuildRender8bppRectFromString")    cImFontAtlasBuildRender8bppRectFromString  :: proc(atlas: ^FontAtlas, x: c.int, y: c.int, w: c.int, h: c.int, in_str: cstring, in_marker_char: c.char, in_marker_pixel_value: c.uchar) ---
+	@(link_name="cImFontAtlasBuildRender32bppRectFromString")   cImFontAtlasBuildRender32bppRectFromString :: proc(atlas: ^FontAtlas, x: c.int, y: c.int, w: c.int, h: c.int, in_str: cstring, in_marker_char: c.char, in_marker_pixel_value: c.uint)  ---
+	@(link_name="cImFontAtlasBuildMultiplyCalcLookupTable")     cImFontAtlasBuildMultiplyCalcLookupTable   :: proc(out_table: ^[256]c.uchar, in_multiply_factor: f32)                                                                                  ---
+	@(link_name="cImFontAtlasBuildMultiplyRectAlpha8")          cImFontAtlasBuildMultiplyRectAlpha8        :: proc(table: ^[256]c.uchar, pixels: ^c.uchar, x: c.int, y: c.int, w: c.int, h: c.int, stride: c.int)                                      ---
 }
 
 ////////////////////////////////////////////////////////////
@@ -2925,14 +2947,15 @@ foreign lib {
 ////////////////////////////////////////////////////////////
 
 // Our current column maximum is 64 but we may raise that in the future.
-TableColumnIdx   :: i16
-ErrorLogCallback :: proc "c" (user_data: rawptr, fmt: cstring, #c_vararg args: ..any)
-FileHandle       :: ^c.FILE
-BitArrayPtr      :: ^u32                                                              // Name for use in structs
+TableColumnIdx :: i16
+FileHandle     :: ^c.FILE
+BitArrayPtr    :: ^u32    // Name for use in structs
 // Helper: ImPool<>
 // Basic keyed storage for contiguous instances, slow/amortized insertion, O(1) indexable, O(Log N) queries by ID over a dense/hot buffer,
 // Honor constructor/destructor. Add/remove invalidate all pointers. Indexes have the same lifetime as the associated object.
-PoolIdx             :: c.int
-KeyRoutingIndex     :: i16
+PoolIdx         :: c.int
+KeyRoutingIndex :: i16
+// The error callback is currently not public, as it is expected that only advanced users will rely on it.
+ErrorCallback       :: proc "c" (ctx: ^Context, user_data: rawptr, msg: cstring) // Function signature for g.ErrorCallback
 ContextHookCallback :: proc "c" (ctx: ^Context, hook: ^ContextHook)
 TableDrawChannelIdx :: u16

@@ -33,8 +33,8 @@ CHECKVERSION :: proc() {
 // DEFINES
 ////////////////////////////////////////////////////////////
 
-VERSION                      :: "1.91.2"
-VERSION_NUM                  :: 19120
+VERSION                      :: "1.91.3"
+VERSION_NUM                  :: 19130
 PAYLOAD_TYPE_COLOR_3F        :: "_COL3F" // float[3]: Standard type for colors, without alpha. User code may use this type.
 PAYLOAD_TYPE_COLOR_4F        :: "_COL4F" // float[4]: Standard type for colors. User code may use this type.
 UNICODE_CODEPOINT_INVALID    :: 0xFFFD   // Invalid Unicode code point (standard value).
@@ -828,16 +828,18 @@ ColorEditFlags_InputMask_    :: ColorEditFlags{.InputRGB,.InputHSV}
 
 // Flags for DragFloat(), DragInt(), SliderFloat(), SliderInt() etc.
 // We use the same sets of flags for DragXXX() and SliderXXX() functions as the features are the same and it makes it easier to swap them.
-// (Those are per-item flags. There are shared flags in ImGuiIO: io.ConfigDragClickToInputText)
+// (Those are per-item flags. There is shared behavior flag too: ImGuiIO: io.ConfigDragClickToInputText)
 SliderFlags :: bit_set[SliderFlag; c.int]
 SliderFlag :: enum c.int {
-	AlwaysClamp     = 4, // Clamp value to min/max bounds when input manually with CTRL+Click. By default CTRL+Click allows going out of bounds.
-	Logarithmic     = 5, // Make the widget logarithmic (linear otherwise). Consider using ImGuiSliderFlags_NoRoundToFormat with this if using a format-string with small amount of digits.
-	NoRoundToFormat = 6, // Disable rounding underlying value to match precision of the display format string (e.g. %.3f values are rounded to those 3 digits).
-	NoInput         = 7, // Disable CTRL+Click or Enter key allowing to input text directly into the widget.
-	WrapAround      = 8, // Enable wrapping around from max to min and from min to max (only supported by DragXXX() functions for now.
+	Logarithmic     = 5,  // Make the widget logarithmic (linear otherwise). Consider using ImGuiSliderFlags_NoRoundToFormat with this if using a format-string with small amount of digits.
+	NoRoundToFormat = 6,  // Disable rounding underlying value to match precision of the display format string (e.g. %.3f values are rounded to those 3 digits).
+	NoInput         = 7,  // Disable CTRL+Click or Enter key allowing to input text directly into the widget.
+	WrapAround      = 8,  // Enable wrapping around from max to min and from min to max. Only supported by DragXXX() functions for now.
+	ClampOnInput    = 9,  // Clamp value to min/max bounds when input manually with CTRL+Click. By default CTRL+Click allows going out of bounds.
+	ClampZeroRange  = 10, // Clamp even if min==max==0.0f. Otherwise due to legacy reason DragXXX functions don't clamp with those values. When your clamping limits are dynamic you almost always want to use it.
 }
 
+SliderFlags_AlwaysClamp  :: SliderFlags{.ClampOnInput,.ClampZeroRange}
 SliderFlags_InvalidMask_ :: c.int(0x7000000F) // Meant to be of type SliderFlags // [Internal] We treat using those bits as being potentially a 'float power' argument from the previous API that has got miscast to this enum, and will trigger an assert if needed.
 
 // Identify a mouse button.
@@ -1360,6 +1362,7 @@ IO :: struct {
 	ConfigDragClickToInputText:        bool, // = false          // [BETA] Enable turning DragXXX widgets into text input with a simple mouse click-release (without moving). Not desirable on devices without a keyboard.
 	ConfigWindowsResizeFromEdges:      bool, // = true           // Enable resizing of windows from their edges and from the lower-left corner. This requires (io.BackendFlags & ImGuiBackendFlags_HasMouseCursors) because it needs mouse cursor feedback. (This used to be a per-window ImGuiWindowFlags_ResizeFromAnySide flag)
 	ConfigWindowsMoveFromTitleBarOnly: bool, // = false       // Enable allowing to move windows only when clicking on their title bar. Does not apply to windows without a title bar.
+	ConfigScrollbarScrollByPage:       bool, // = true           // Enable scrolling page by page when clicking outside the scrollbar grab. When disabled, always scroll to clicked location. When enabled, Shift+Click scrolls to clicked location.
 	ConfigMemoryCompactTimer:          f32,  // = 60.0f          // Timer (in seconds) to free transient windows/tables memory buffers when unused. Set to -1.0f to disable.
 	// Inputs Behaviors
 	// (other variables, ones which are expected to be tweaked within UI code, are exposed in ImGuiStyle)
@@ -1368,6 +1371,24 @@ IO :: struct {
 	MouseDragThreshold:      f32, // = 6.0f           // Distance threshold before considering we are dragging.
 	KeyRepeatDelay:          f32, // = 0.275f         // When holding a key/button, time before it starts repeating, in seconds (for buttons in Repeat mode, etc.).
 	KeyRepeatRate:           f32, // = 0.050f         // When holding a key/button, rate at which it repeats, in seconds.
+	// Options to configure Error Handling and how we handle recoverable errors [EXPERIMENTAL]
+	// - Error recovery is provided as a way to facilitate:
+	//    - Recovery after a programming error (native code or scripting language - the later tends to facilitate iterating on code while running).
+	//    - Recovery after running an exception handler or any error processing which may skip code after an error has been detected.
+	// - Error recovery is not perfect nor guaranteed! It is a feature to ease development.
+	//   You not are not supposed to rely on it in the course of a normal application run.
+	// - Functions that support error recovery are using IM_ASSERT_USER_ERROR() instead of IM_ASSERT().
+	// - By design, we do NOT allow error recovery to be 100% silent. One of the three options needs to be checked!
+	// - Always ensure that on programmers seats you have at minimum Asserts or Tooltips enabled when making direct imgui API calls!
+	//   Otherwise it would severely hinder your ability to catch and correct mistakes!
+	// Read https://github.com/ocornut/imgui/wiki/Error-Handling for details.
+	// - Programmer seats: keep asserts (default), or disable asserts and keep error tooltips (new and nice!)
+	// - Non-programmer seats: maybe disable asserts, but make sure errors are resurfaced (tooltips, visible log entries, use callback etc.)
+	// - Recovery after error/exception: record stack sizes with ErrorRecoveryStoreState(), disable assert, set log callback (to e.g. trigger high-level breakpoint), recover with ErrorRecoveryTryToRecoverState(), restore settings.
+	ConfigErrorRecovery:               bool, // = true       // Enable error recovery support. Some errors won't be detected and lead to direct crashes if recovery is disabled.
+	ConfigErrorRecoveryEnableAssert:   bool, // = true       // Enable asserts on recoverable error. By default call IM_ASSERT() when returning from a failing IM_ASSERT_USER_ERROR()
+	ConfigErrorRecoveryEnableDebugLog: bool, // = true       // Enable debug log output on recoverable errors.
+	ConfigErrorRecoveryEnableTooltip:  bool, // = true       // Enable tooltip on recoverable errors. The tooltip include a way to enable asserts if they were disabled.
 	// Option to enable various debug tools showing buttons that will call the IM_DEBUG_BREAK() macro.
 	// - The Item Picker tool will be available regardless of this being enabled, in order to maximize its discoverability.
 	// - Requires a debugger being attached, otherwise IM_DEBUG_BREAK() options will appear to crash your application.
@@ -2533,7 +2554,7 @@ foreign lib {
 	// - Disable all user interactions and dim items visuals (applying style.DisabledAlpha over current colors)
 	// - Those can be nested but it cannot be used to enable an already disabled section (a single BeginDisabled(true) in the stack is enough to keep everything disabled)
 	// - Tooltips windows by exception are opted out of disabling.
-	// - BeginDisabled(false) essentially does nothing useful but is provided to facilitate use of boolean expressions. If you can avoid calling BeginDisabled(False)/EndDisabled() best to avoid it.
+	// - BeginDisabled(false)/EndDisabled() essentially does nothing but is provided to facilitate use of boolean expressions (as a micro-optimization: if you have tens of thousands of BeginDisabled(false)/EndDisabled() pairs, you might want to reformulate your code to avoid making those calls)
 	@(link_name="ImGui_BeginDisabled") BeginDisabled :: proc(disabled: bool = true) ---
 	@(link_name="ImGui_EndDisabled")   EndDisabled   :: proc()                      ---
 	// Clipping
