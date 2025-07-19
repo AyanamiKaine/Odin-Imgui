@@ -17,7 +17,7 @@ import random
 # @CONFIGURE: Must be key into below table
 # Note that the backend files and examples may also have to be updated, if you use these.
 git_heads = {
-	"imgui": "v1.91.3-docking",
+	"imgui": "v1.91.4-docking",
 	"dear_bindings": "81c906b",
 }
 

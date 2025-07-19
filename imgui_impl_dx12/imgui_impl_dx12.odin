@@ -14,7 +14,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_dx12.h
-// Last checked `v1.91.3-docking` (6df1a06)
+// Last checked `v1.91.4-docking` (514a97a)
 @(link_prefix="ImGui_ImplDX12_")
 foreign lib {
 	// cmd_list is the command list that the implementation will use to render imgui draw lists.
@@ -30,4 +30,12 @@ foreign lib {
 	// Use if you want to reset your rendering device without losing Dear ImGui state.
 	InvalidateDeviceObjects :: proc() ---
 	CreateDeviceObjects     :: proc() -> bool ---
+}
+
+// [BETA] Selected render state data shared with callbacks.
+// This is temporarily stored in GetPlatformIO().Renderer_RenderState during the ImGui_ImplDX12_RenderDrawData() call.
+// (Please open an issue if you feel you need access to more data)
+RenderState :: struct {
+    Device:      ^d3d12.IDevice,
+    CommandList: ^d3d12.IGraphicsCommandList,
 }

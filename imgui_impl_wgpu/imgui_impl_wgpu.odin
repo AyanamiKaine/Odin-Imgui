@@ -155,7 +155,7 @@ RenderDrawData :: proc(draw_data: ^imgui.DrawData, pass_encoder: wgpu.RenderPass
 				// TODO: error?
 				_, val, is_new, _ := map_entry(&bd.renderResources.imageBindGroups, tex_id)
 				if is_new {
-					bind_group := CreateImageBindGroup(bd.renderResources.imageBindGroupLayout, cast(wgpu.TextureView)tex_id)
+					bind_group := CreateImageBindGroup(bd.renderResources.imageBindGroupLayout, cast(wgpu.TextureView)cast(uintptr)tex_id)
 					val^ = bind_group
 				}
 				wgpu.RenderPassEncoderSetBindGroup(pass_encoder, 1, val^)
@@ -342,7 +342,7 @@ CreateFontsTexture :: proc() {
 		maxAnisotropy = 1,
 	})
 
-	imgui.FontAtlas_SetTexID(io.Fonts, bd.renderResources.fontTextureView)
+	imgui.FontAtlas_SetTexID(io.Fonts, cast(imgui.TextureID)cast(uintptr)bd.renderResources.fontTextureView)
 }
 
 @(private)
@@ -493,7 +493,7 @@ InvalidateDeviceObjects :: proc() {
 	wgpu.BindGroupLayoutRelease(bd.renderResources.imageBindGroupLayout)
 
 	io := imgui.GetIO()
-	imgui.FontAtlas_SetTexID(io.Fonts, nil)
+	imgui.FontAtlas_SetTexID(io.Fonts, imgui.TextureID{})
 
 	for &frame in bd.frameResources {
 		wgpu.BufferRelease(frame.indexBuffer)

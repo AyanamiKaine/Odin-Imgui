@@ -52,9 +52,8 @@ ItemStatusFlag :: enum c.int {
 InputTextFlagsPrivate :: enum c.int {
 	// [Internal]
 	ImGuiInputTextFlags_Multiline = 67108864,             // For internal use by InputTextMultiline()
-	ImGuiInputTextFlags_NoMarkEdited = 134217728,         // For internal use by functions using InputText() before reformatting data
-	ImGuiInputTextFlags_MergedItem = 268435456,           // For internal use by TempInputText(), will skip calling ItemAdd(). Require bounding-box to strictly match.
-	ImGuiInputTextFlags_LocalizeDecimalPoint = 536870912, // For internal use by InputScalar() and TempInputScalar()
+	ImGuiInputTextFlags_MergedItem = 134217728,           // For internal use by TempInputText(), will skip calling ItemAdd(). Require bounding-box to strictly match.
+	ImGuiInputTextFlags_LocalizeDecimalPoint = 268435456, // For internal use by InputScalar() and TempInputScalar()
 }
 
 // Extend ImGuiComboFlags_
@@ -225,30 +224,36 @@ ScrollFlag :: enum c.int {
 ScrollFlags_MaskX_ :: ScrollFlags{.KeepVisibleEdgeX,.KeepVisibleCenterX,.AlwaysCenterX}
 ScrollFlags_MaskY_ :: ScrollFlags{.KeepVisibleEdgeY,.KeepVisibleCenterY,.AlwaysCenterY}
 
-NavHighlightFlags :: distinct c.int
-NavHighlightFlags_None       :: NavHighlightFlags(0)
-NavHighlightFlags_Compact    :: NavHighlightFlags(1<<1) // Compact highlight, no padding
-NavHighlightFlags_AlwaysDraw :: NavHighlightFlags(1<<2) // Draw rectangular highlight if (g.NavId == id) _even_ when using the mouse.
-NavHighlightFlags_NoRounding :: NavHighlightFlags(1<<3)
+NavRenderCursorFlags :: bit_set[NavRenderCursorFlag; c.int]
+NavRenderCursorFlag :: enum c.int {
+	Compact    = 1, // Compact highlight, no padding/distance from focused item
+	AlwaysDraw = 2, // Draw rectangular highlight if (g.NavId == id) even when g.NavCursorVisible == false, aka even when using the mouse.
+	NoRounding = 3,
+}
+
+NavRenderCursorFlags_ImGuiNavHighlightFlags_None       :: NavRenderCursorFlags{}            // Renamed in 1.91.4
+NavRenderCursorFlags_ImGuiNavHighlightFlags_Compact    :: NavRenderCursorFlags{.Compact}    // Renamed in 1.91.4
+NavRenderCursorFlags_ImGuiNavHighlightFlags_AlwaysDraw :: NavRenderCursorFlags{.AlwaysDraw} // Renamed in 1.91.4
+NavRenderCursorFlags_ImGuiNavHighlightFlags_NoRounding :: NavRenderCursorFlags{.NoRounding} // Renamed in 1.91.4
 
 NavMoveFlags :: bit_set[NavMoveFlag; c.int]
 NavMoveFlag :: enum c.int {
-	LoopX               = 0,  // On failed request, restart from opposite side
-	LoopY               = 1,
-	WrapX               = 2,  // On failed request, request from opposite side one line down (when NavDir==right) or one line up (when NavDir==left)
-	WrapY               = 3,  // This is not super useful but provided for completeness
-	AllowCurrentNavId   = 4,  // Allow scoring and considering the current NavId as a move target candidate. This is used when the move source is offset (e.g. pressing PageDown actually needs to send a Up move request, if we are pressing PageDown from the bottom-most item we need to stay in place)
-	AlsoScoreVisibleSet = 5,  // Store alternate result in NavMoveResultLocalVisible that only comprise elements that are already fully visible (used by PageUp/PageDown)
-	ScrollToEdgeY       = 6,  // Force scrolling to min/max (used by Home/End) // FIXME-NAV: Aim to remove or reword, probably unnecessary
-	Forwarded           = 7,
-	DebugNoResult       = 8,  // Dummy scoring for debug purpose, don't apply result
-	FocusApi            = 9,  // Requests from focus API can land/focus/activate items even if they are marked with _NoTabStop (see NavProcessItemForTabbingRequest() for details)
-	IsTabbing           = 10, // == Focus + Activate if item is Inputable + DontChangeNavHighlight
-	IsPageMove          = 11, // Identify a PageDown/PageUp request.
-	Activate            = 12, // Activate/select target item.
-	NoSelect            = 13, // Don't trigger selection by not setting g.NavJustMovedTo
-	NoSetNavHighlight   = 14, // Do not alter the visible state of keyboard vs mouse nav highlight
-	NoClearActiveId     = 15, // (Experimental) Do not clear active id when applying move result
+	LoopX                 = 0,  // On failed request, restart from opposite side
+	LoopY                 = 1,
+	WrapX                 = 2,  // On failed request, request from opposite side one line down (when NavDir==right) or one line up (when NavDir==left)
+	WrapY                 = 3,  // This is not super useful but provided for completeness
+	AllowCurrentNavId     = 4,  // Allow scoring and considering the current NavId as a move target candidate. This is used when the move source is offset (e.g. pressing PageDown actually needs to send a Up move request, if we are pressing PageDown from the bottom-most item we need to stay in place)
+	AlsoScoreVisibleSet   = 5,  // Store alternate result in NavMoveResultLocalVisible that only comprise elements that are already fully visible (used by PageUp/PageDown)
+	ScrollToEdgeY         = 6,  // Force scrolling to min/max (used by Home/End) // FIXME-NAV: Aim to remove or reword, probably unnecessary
+	Forwarded             = 7,
+	DebugNoResult         = 8,  // Dummy scoring for debug purpose, don't apply result
+	FocusApi              = 9,  // Requests from focus API can land/focus/activate items even if they are marked with _NoTabStop (see NavProcessItemForTabbingRequest() for details)
+	IsTabbing             = 10, // == Focus + Activate if item is Inputable + DontChangeNavHighlight
+	IsPageMove            = 11, // Identify a PageDown/PageUp request.
+	Activate              = 12, // Activate/select target item.
+	NoSelect              = 13, // Don't trigger selection by not setting g.NavJustMovedTo
+	NoSetNavCursorVisible = 14, // Do not alter the nav cursor visible state
+	NoClearActiveId       = 15, // (Experimental) Do not clear active id when applying move result
 }
 
 NavMoveFlags_WrapMask_ :: NavMoveFlags{.LoopX,.LoopY,.WrapX,.WrapY}
@@ -833,7 +838,7 @@ NextWindowData :: struct {
 }
 
 NextItemData :: struct {
-	Flags:     NextItemDataFlags,
+	HasFlags:  NextItemDataFlags, // Called HasFlags instead of Flags to avoid mistaking this
 	ItemFlags: ItemFlags,         // Currently only tested/used for ImGuiItemFlags_AllowOverlap and ImGuiItemFlags_HasSelectionUserData.
 	// Non-flags members are NOT cleared by ItemAdd() meaning they are still valid during NavProcessItem()
 	FocusScopeId:      ID,                // Set by SetNextItemSelectionUserData()
@@ -850,7 +855,7 @@ NextItemData :: struct {
 // Status storage for the last submitted item
 LastItemData :: struct {
 	ID_:         ID,
-	InFlags:     ItemFlags,       // See ImGuiItemFlags_
+	ItemFlags:   ItemFlags,       // See ImGuiItemFlags_
 	StatusFlags: ItemStatusFlags, // See ImGuiItemStatusFlags_
 	Rect_:       Rect,            // Full rectangle
 	NavRect:     Rect,            // Navigation scoring rectangle (not displayed)
@@ -867,7 +872,7 @@ LastItemData :: struct {
 TreeNodeStackData :: struct {
 	ID_:       ID,
 	TreeFlags: TreeNodeFlags,
-	InFlags:   ItemFlags,     // Used for nav landing
+	ItemFlags: ItemFlags,     // Used for nav landing
 	NavRect:   Rect,          // Used for nav landing
 }
 
@@ -1028,14 +1033,14 @@ NavItemData :: struct {
 	ID_:               ID,                // Init,Move    // Best candidate item ID
 	FocusScopeId:      ID,                // Init,Move    // Best candidate focus scope ID
 	RectRel:           Rect,              // Init,Move    // Best candidate bounding box in window relative space
-	InFlags:           ItemFlags,         // ????,Move    // Best candidate item flags
+	ItemFlags:         ItemFlags,         // ????,Move    // Best candidate item flags
 	DistBox:           f32,               //      Move    // Best candidate box distance to current NavId
 	DistCenter:        f32,               //      Move    // Best candidate center distance to current NavId
 	DistAxial:         f32,               //      Move    // Best candidate axial distance to current NavId
-	SelectionUserData: SelectionUserData, //I+Mov    // Best candidate SetNextItemSelectionUserData() value. Valid if (InFlags & ImGuiItemFlags_HasSelectionUserData)
+	SelectionUserData: SelectionUserData, //I+Mov    // Best candidate SetNextItemSelectionUserData() value. Valid if (ItemFlags & ImGuiItemFlags_HasSelectionUserData)
 }
 
-// Storage for PushFocusScope()
+// Storage for PushFocusScope(), g.FocusScopeStack[], g.NavFocusRoute[]
 FocusScopeData :: struct {
 	ID_:      ID,
 	WindowID: ID,
@@ -1469,9 +1474,15 @@ Context :: struct {
 	ViewportCreatedCount:          c.int,               // Unique sequential creation counter (mostly for testing/debugging)
 	PlatformWindowsCreatedCount:   c.int,               // Unique sequential creation counter (mostly for testing/debugging)
 	ViewportFocusedStampCount:     c.int,               // Every time the front-most window changes, we stamp its viewport with an incrementing counter
-	// Gamepad/keyboard Navigation
-	NavWindow:                     ^Window,               // Focused window for navigation. Could be called 'FocusedWindow'
+	// Keyboard/Gamepad Navigation
+	NavCursorVisible:         bool, // Nav focus cursor/rectangle is visible? We hide it after a mouse click. We show it after a nav move.
+	NavHighlightItemUnderNav: bool, // Disable mouse hovering highlight. Highlight navigation focused item instead of mouse hovered item.
+	//bool                  NavDisableHighlight;                // Old name for !g.NavCursorVisible before 1.91.4 (2024/10/18). OPPOSITE VALUE (g.NavDisableHighlight == !g.NavCursorVisible)
+	//bool                  NavDisableMouseHover;               // Old name for g.NavHighlightItemUnderNav before 1.91.1 (2024/10/18) this was called When user starts using keyboard/gamepad, we hide mouse hovering highlight until mouse is touched again.
+	NavMousePosDirty:              bool,                  // When set we will update mouse position if io.ConfigNavMoveSetMousePos is set (not enabled by default)
+	NavIdIsAlive:                  bool,                  // Nav widget has been seen this frame ~~ NavRectRel is valid
 	NavId:                         ID,                    // Focused item for navigation
+	NavWindow:                     ^Window,               // Focused window for navigation. Could be called 'FocusedWindow'
 	NavFocusScopeId:               ID,                    // Focused focus scope (e.g. selection code often wants to "clear other items" when landing on an item of the same scope)
 	NavLayer:                      NavLayer,              // Focused layer (main scrolling layer, or menu/title bar layer)
 	NavActivateId:                 ID,                    // ~~ (g.ActiveId == 0) && (IsKeyPressed(ImGuiKey_Space) || IsKeyDown(ImGuiKey_Enter) || IsKeyPressed(ImGuiKey_NavGamepadActivate)) ? NavId : 0, also set when calling ActivateItem()
@@ -1485,10 +1496,7 @@ Context :: struct {
 	NavNextActivateFlags:          ActivateFlags,
 	NavInputSource:                InputSource,           // Keyboard or Gamepad mode? THIS CAN ONLY BE ImGuiInputSource_Keyboard or ImGuiInputSource_Mouse
 	NavLastValidSelectionUserData: SelectionUserData,     // Last valid data passed to SetNextItemSelectionUser(), or -1. For current window. Not reset when focusing an item that doesn't have selection data.
-	NavIdIsAlive:                  bool,                  // Nav widget has been seen this frame ~~ NavRectRel is valid
-	NavMousePosDirty:              bool,                  // When set we will update mouse position if (io.ConfigFlags & ImGuiConfigFlags_NavEnableSetMousePos) if set (NB: this not enabled by default)
-	NavDisableHighlight:           bool,                  // When user starts using mouse, we hide gamepad/keyboard highlight (NB: but they are still available, which is why NavDisableHighlight isn't always != NavDisableMouseHover)
-	NavDisableMouseHover:          bool,                  // When user starts using gamepad/keyboard, we hide mouse hovering highlight until mouse is touched again.
+	NavCursorHideFrames:           i8,
 	// Navigation: Init & Move Requests
 	NavAnyRequest:             bool,         // ~~ NavMoveRequest || NavInitRequest this is to perform early out in ItemAdd()
 	NavInitRequest:            bool,         // Init request for appearing window to select first item
@@ -1518,7 +1526,7 @@ Context :: struct {
 	NavJustMovedToFocusScopeId:     ID,       // Just navigated to this focus scope id (result of a successfully MoveRequest).
 	NavJustMovedToKeyMods:          KeyChord,
 	NavJustMovedToIsTabbing:        bool,     // Copy of ImGuiNavMoveFlags_IsTabbing. Maybe we should store whole flags.
-	NavJustMovedToHasSelectionData: bool,     // Copy of move result's InFlags & ImGuiItemFlags_HasSelectionUserData). Maybe we should just store ImGuiNavItemData.
+	NavJustMovedToHasSelectionData: bool,     // Copy of move result's ItemFlags & ImGuiItemFlags_HasSelectionUserData). Maybe we should just store ImGuiNavItemData.
 	// Navigation: Windowing (CTRL+TAB for list, or Menu button + keys or directional pads to move/resize)
 	ConfigNavWindowingKeyNext:  KeyChord, // = ImGuiMod_Ctrl | ImGuiKey_Tab (or ImGuiMod_Super | ImGuiKey_Tab on OS X). For reconfiguration (see #4828)
 	ConfigNavWindowingKeyPrev:  KeyChord, // = ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Tab (or ImGuiMod_Super | ImGuiMod_Shift | ImGuiKey_Tab on OS X)
@@ -1613,7 +1621,6 @@ Context :: struct {
 	DragSpeedDefaultRatio:           f32,                       // If speed == 0.0f, uses (max-min) * DragSpeedDefaultRatio
 	DisabledAlphaBackup:             f32,                       // Backup for style.Alpha for BeginDisabled()
 	DisabledStackSize:               c.short,
-	LockMarkEdited:                  c.short,
 	TooltipOverrideCount:            c.short,
 	TooltipPreviousWindow:           ^Window,                   // Window of last tooltip submitted during the frame
 	ClipboardHandlerData:            Vector_char,               // If no custom clipboard handler is defined
@@ -2515,7 +2522,7 @@ foreign lib {
 	@(link_name="ImGui_BeginChildEx") BeginChildEx :: proc(name: cstring, id: ID, size_arg: Vec2, child_flags: ChildFlags, window_flags: WindowFlags) -> bool ---
 	// Popups, Modals
 	@(link_name="ImGui_BeginPopupEx")                   BeginPopupEx                   :: proc(id: ID, extra_window_flags: WindowFlags) -> bool                                                              ---
-	@(link_name="ImGui_OpenPopupEx")                    OpenPopupEx                    :: proc(id: ID, popup_flags: PopupFlags = PopupFlags_None)                                                            ---
+	@(link_name="ImGui_OpenPopupEx")                    OpenPopupEx                    :: proc(id: ID, popup_flags: PopupFlags)                                                                              ---
 	@(link_name="ImGui_ClosePopupToLevel")              ClosePopupToLevel              :: proc(remaining: c.int, restore_focus_to_window_under_popup: bool)                                                  ---
 	@(link_name="ImGui_ClosePopupsOverWindow")          ClosePopupsOverWindow          :: proc(ref_window: ^Window, restore_focus_to_window_under_popup: bool)                                               ---
 	@(link_name="ImGui_ClosePopupsExceptModals")        ClosePopupsExceptModals        :: proc()                                                                                                             ---
@@ -2537,7 +2544,7 @@ foreign lib {
 	@(link_name="ImGui_BeginComboPopup")   BeginComboPopup   :: proc(popup_id: ID, bb: Rect, flags: ComboFlags) -> bool ---
 	@(link_name="ImGui_BeginComboPreview") BeginComboPreview :: proc() -> bool                                          ---
 	@(link_name="ImGui_EndComboPreview")   EndComboPreview   :: proc()                                                  ---
-	// Gamepad/Keyboard Navigation
+	// Keyboard/Gamepad Navigation
 	@(link_name="ImGui_NavInitWindow")                           NavInitWindow                           :: proc(window: ^Window, force_reinit: bool)                                               ---
 	@(link_name="ImGui_NavInitRequestApplyResult")               NavInitRequestApplyResult               :: proc()                                                                                  ---
 	@(link_name="ImGui_NavMoveRequestButNoResultYet")            NavMoveRequestButNoResultYet            :: proc() -> bool                                                                          ---
@@ -2550,7 +2557,7 @@ foreign lib {
 	@(link_name="ImGui_NavMoveRequestTryWrapping")               NavMoveRequestTryWrapping               :: proc(window: ^Window, move_flags: NavMoveFlags)                                         ---
 	@(link_name="ImGui_NavHighlightActivated")                   NavHighlightActivated                   :: proc(id: ID)                                                                            ---
 	@(link_name="ImGui_NavClearPreferredPosForAxis")             NavClearPreferredPosForAxis             :: proc(axis: Axis)                                                                        ---
-	@(link_name="ImGui_NavRestoreHighlightAfterMove")            NavRestoreHighlightAfterMove            :: proc()                                                                                  ---
+	@(link_name="ImGui_SetNavCursorVisibleAfterMove")            SetNavCursorVisibleAfterMove            :: proc()                                                                                  ---
 	@(link_name="ImGui_NavUpdateCurrentWindowIsScrollPushableX") NavUpdateCurrentWindowIsScrollPushableX :: proc()                                                                                  ---
 	@(link_name="ImGui_SetNavWindow")                            SetNavWindow                            :: proc(window: ^Window)                                                                   ---
 	@(link_name="ImGui_SetNavID")                                SetNavID                                :: proc(id: ID, nav_layer: NavLayer, focus_scope_id: ID, rect_rel: Rect)                   ---
@@ -2704,7 +2711,9 @@ foreign lib {
 	@(link_name="ImGui_IsDragDropPayloadBeingAccepted") IsDragDropPayloadBeingAccepted :: proc() -> bool                       ---
 	@(link_name="ImGui_RenderDragDropTargetRect")       RenderDragDropTargetRect       :: proc(bb: Rect, item_clip_rect: Rect) ---
 	// Typing-Select API
-	@(link_name="ImGui_GetTypingSelectRequest")              GetTypingSelectRequest              :: proc(flags: TypingSelectFlags = TypingSelectFlags_None) -> ^TypingSelectRequest                                                                                             ---
+	// (provide Windows Explorer style "select items by typing partial name" + "cycle through items by typing same letter" feature)
+	// (this is currently not documented nor used by main library, but should work. See "widgets_typingselect" in imgui_test_suite for usage code. Please let us know if you use this!)
+	@(link_name="ImGui_GetTypingSelectRequest")              GetTypingSelectRequest              :: proc(flags: TypingSelectFlags) -> ^TypingSelectRequest                                                                                                                      ---
 	@(link_name="ImGui_TypingSelectFindMatch")               TypingSelectFindMatch               :: proc(req: ^TypingSelectRequest, items_count: c.int, get_item_name_func: proc "c" (arg_0: rawptr, arg_1: c.int) -> cstring, user_data: rawptr, nav_item_idx: c.int) -> c.int ---
 	@(link_name="ImGui_TypingSelectFindNextSingleCharMatch") TypingSelectFindNextSingleCharMatch :: proc(req: ^TypingSelectRequest, items_count: c.int, get_item_name_func: proc "c" (arg_0: rawptr, arg_1: c.int) -> cstring, user_data: rawptr, nav_item_idx: c.int) -> c.int ---
 	@(link_name="ImGui_TypingSelectFindBestLeadingMatch")    TypingSelectFindBestLeadingMatch    :: proc(req: ^TypingSelectRequest, items_count: c.int, get_item_name_func: proc "c" (arg_0: rawptr, arg_1: c.int) -> cstring, user_data: rawptr) -> c.int                      ---
@@ -2815,7 +2824,8 @@ foreign lib {
 	@(link_name="ImGui_RenderFrame")                          RenderFrame                          :: proc(p_min: Vec2, p_max: Vec2, fill_col: u32, borders: bool = true, rounding: f32 = 0.0)                                                                            ---
 	@(link_name="ImGui_RenderFrameBorder")                    RenderFrameBorder                    :: proc(p_min: Vec2, p_max: Vec2, rounding: f32 = 0.0)                                                                                                                 ---
 	@(link_name="ImGui_RenderColorRectWithAlphaCheckerboard") RenderColorRectWithAlphaCheckerboard :: proc(draw_list: ^DrawList, p_min: Vec2, p_max: Vec2, fill_col: u32, grid_step: f32, grid_off: Vec2, rounding: f32 = 0.0, flags: DrawFlags = {})                     ---
-	@(link_name="ImGui_RenderNavHighlight")                   RenderNavHighlight                   :: proc(bb: Rect, id: ID, flags: NavHighlightFlags = NavHighlightFlags_None)                                                                                           --- // Navigation highlight
+	@(link_name="ImGui_RenderNavCursor")                      RenderNavCursor                      :: proc(bb: Rect, id: ID, flags: NavRenderCursorFlags)                                                                                                                 --- // Navigation highlight
+	@(link_name="ImGui_RenderNavHighlight")                   RenderNavHighlight                   :: proc(bb: Rect, id: ID, flags: NavRenderCursorFlags)                                                                                                                 --- // Renamed in 1.91.4
 	@(link_name="ImGui_FindRenderedTextEnd")                  FindRenderedTextEnd                  :: proc(text: cstring, text_end: cstring = nil) -> cstring                                                                                                             --- // Find the optional ## from which we stop displaying text.
 	@(link_name="ImGui_RenderMouseCursor")                    RenderMouseCursor                    :: proc(pos: Vec2, scale: f32, mouse_cursor: MouseCursor, col_fill: u32, col_border: u32, col_shadow: u32)                                                             ---
 	// Render helpers (those functions don't access any ImGui state!)
@@ -2928,8 +2938,6 @@ foreign lib {
 	@(link_name="ImGui_DebugNodePlatformMonitor")               DebugNodePlatformMonitor                   :: proc(monitor: ^PlatformMonitor, label: cstring, idx: c.int)                                                                              ---
 	@(link_name="ImGui_DebugRenderKeyboardPreview")             DebugRenderKeyboardPreview                 :: proc(draw_list: ^DrawList)                                                                                                               ---
 	@(link_name="ImGui_DebugRenderViewportThumbnail")           DebugRenderViewportThumbnail               :: proc(draw_list: ^DrawList, viewport: ^ViewportP, bb: Rect)                                                                               ---
-	@(link_name="ImGui_SetItemUsingMouseWheel")                 SetItemUsingMouseWheel                     :: proc()                                                                                                                                   --- // Changed in 1.89
-	@(link_name="ImGui_TreeNodeBehaviorIsOpen")                 TreeNodeBehaviorIsOpen                     :: proc(id: ID, flags: TreeNodeFlags = {}) -> bool                                                                                          --- // Renamed in 1.89
 	@(link_name="cImFontAtlasGetBuilderForStbTruetype")         cImFontAtlasGetBuilderForStbTruetype       :: proc() -> ^FontBuilderIO                                                                                                                 ---
 	@(link_name="cImFontAtlasUpdateConfigDataPointers")         cImFontAtlasUpdateConfigDataPointers       :: proc(atlas: ^FontAtlas)                                                                                                                  ---
 	@(link_name="cImFontAtlasBuildInit")                        cImFontAtlasBuildInit                      :: proc(atlas: ^FontAtlas)                                                                                                                  ---

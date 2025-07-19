@@ -10,7 +10,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_vulkan.h
-// Last checked `v1.91.3-docking` (6df1a06)
+// Last checked `v1.91.4-docking` (514a97a)
 
 // Initialization data, for ImGui_ImplVulkan_Init()
 // - VkDescriptorPool should be created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
@@ -48,18 +48,18 @@ InitInfo :: struct {
 
 @(link_prefix="ImGui_ImplVulkan_")
 foreign lib {
-	Init :: proc(info: ^InitInfo) -> bool ---
-	Shutdown :: proc() ---
-	NewFrame :: proc() ---
-	RenderDrawData :: proc(draw_data: ^imgui.DrawData, command_buffer: vk.CommandBuffer, pipeline: vk.Pipeline = {}) ---
-	CreateFontsTexture :: proc() -> bool ---
+	Init                :: proc(info: ^InitInfo) -> bool ---
+	Shutdown            :: proc() ---
+	NewFrame            :: proc() ---
+	RenderDrawData      :: proc(draw_data: ^imgui.DrawData, command_buffer: vk.CommandBuffer, pipeline: vk.Pipeline = {}) ---
+	CreateFontsTexture  :: proc() -> bool ---
 	DestroyFontsTexture :: proc() ---
-	SetMinImageCount :: proc(min_image_count: u32) --- // To override MinImageCount after initialization (e.g. if swap chain is recreated)
+	SetMinImageCount    :: proc(min_image_count: u32) --- // To override MinImageCount after initialization (e.g. if swap chain is recreated)
 
 	// Register a texture (VkDescriptorSet == ImTextureID)
 	// FIXME: This is experimental in the sense that we are unsure how to best design/tackle this problem
 	// Please post to https://github.com/ocornut/imgui/pull/914 if you have suggestions.
-	AddTexture :: proc(sampler: vk.Sampler, image_view: vk.ImageView, image_layout: vk.ImageLayout) -> vk.DescriptorSet ---
+	AddTexture    :: proc(sampler: vk.Sampler, image_view: vk.ImageView, image_layout: vk.ImageLayout) -> vk.DescriptorSet ---
 	RemoveTexture :: proc(descriptor_set: vk.DescriptorSet) ---
 
 	// Optional: load Vulkan functions with a custom function loader
@@ -67,4 +67,15 @@ foreign lib {
 	LoadFunctions :: proc(loader_func: proc "c" (function_name: cstring, user_data: rawptr) -> vk.ProcVoidFunction, user_data: rawptr = nil) -> bool ---
 }
 
-// There are some more Vulkan functions/structs, but they aren't necessary
+// [BETA] Selected render state data shared with callbacks.
+// This is temporarily stored in GetPlatformIO().Renderer_RenderState during the ImGui_ImplVulkan_RenderDrawData() call.
+// (Please open an issue if you feel you need access to more data)
+RenderState :: struct {
+    CommandBuffer:  vk.CommandBuffer,
+    Pipeline:       vk.Pipeline,
+    PipelineLayout: vk.PipelineLayout,
+}
+
+// There are some more Vulkan functions/structs which are not bound. They are described like this:
+// Internal / Miscellaneous Vulkan Helpers
+// (Used by example's main.cpp. Used by multi-viewport features. PROBABLY NOT used by your own engine/app.)

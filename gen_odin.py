@@ -330,7 +330,11 @@ def make_value_odiney(value: str, type_hint: str = None) -> str:
 	if type_hint == "Vec2": return convert_imvec_value(value, 2)
 	if type_hint == "Vec4": return convert_imvec_value(value, 4)
 	# TODO: This is almost certainly not the right place to do this
-	if strip_imgui_branding(value) != value: return strip_imgui_branding(value)
+	if strip_imgui_branding(value) != value:
+		stripped = strip_imgui_branding(value)
+		# Mega hack. If the default value is using the WhateverFlags_None for enums, we need to substitute with {}
+		if stripped.endswith("_None"): return {}
+		return stripped
 	if value.endswith("f"): return value.removesuffix("f")
 
 	if value == "0" and not type_is_int(type_hint): return "{}"
@@ -627,25 +631,15 @@ def enum_parse_field_name(field_base_name: str, expected_prefix: str) -> str:
 def enum_split_value(value: str) -> typing.List[str]:
 	return list(map(lambda s: s.strip(), value.split("|")))
 
-def enum_parse_value(value: str, enum_name, expected_prefix: str) -> str:
-	if value.find("<") != -1 or str_to_int(value) != None:
-		return value
-	else:
-		enums = enum_split_value(value)
-
-		element_list = []
-
-		for enum in enums:
-			element_list.append(enum_name + "." + enum_parse_field_name(enum, expected_prefix))
-
-		return " | ".join(element_list)
-
-def enum_parse_flag_combination(value: str, expected_prefix: str) -> typing.List[str]:
+def enum_parse_flag_combination(value: str, expected_prefix: str, none_element_entire_name: str) -> typing.List[str]:
 	enums = enum_split_value(value)
 
 	combined_enums = []
 
 	for enum in enums:
+		# assert False, enum
+		if enum == none_element_entire_name: continue
+		if enum == "None": continue
 		combined_enums.append("." + enum_parse_field_name(enum, expected_prefix))
 
 	return combined_enums
@@ -653,6 +647,7 @@ def enum_parse_flag_combination(value: str, expected_prefix: str) -> typing.List
 def write_enum_as_flags(file, enum, enum_field_prefix, name):
 	aligned_enums = []
 	aligned_flags = []
+	none_element_entire_name = None
 
 	for element in enum["elements"]:
 		if not passes_conditionals(element): continue
@@ -660,30 +655,29 @@ def write_enum_as_flags(file, enum, enum_field_prefix, name):
 		element_entire_name = element["name"]
 		element_value = element["value_expression"]
 		element_name = enum_parse_field_name(element_entire_name, enum_field_prefix)
-		handled = False # To catch missed cases
 
 		bit_index = strip_prefix_optional("1<<", element_value)
 		if bit_index != None:
 			# We're definitely something that can be represented with a single bit
 			append_aligned_field(aligned_enums, [element_name, f' = {bit_index},'], element)
-			handled = True
+			continue
 		else:
 			# We're something weird
-			if element_value == "0": continue # This is the _None variant, which can be represented in Odin by {}
+			if element_value == "0":
+				# This is the _None variant, which can be represented in Odin by {}
+				none_element_entire_name = element_entire_name
+				continue
 
 			if try_eval(element_value) != None:
 				extra_comment = f'Meant to be of type {name}'
 				append_aligned_field(aligned_flags, [f'{name}_{element_name}', f' :: c.int({element_value}) // {extra_comment}'], element)
-				handled = True
+				continue
 			else:
-				flag_combination = ",".join(enum_parse_flag_combination(element_value, enum_field_prefix))
+				flag_combination = ",".join(enum_parse_flag_combination(element_value, enum_field_prefix, none_element_entire_name))
 				append_aligned_field(aligned_flags, [f'{name}_{element_name}', f' :: {name}{{{flag_combination}}}'], element)
-				handled = True
+				continue
 
-		if not handled:
-			print("element_entire_name", element_entire_name)
-			print("element_value", element_value)
-			print("element_name", element_name)
+		assert False, "Enum element not handled!"
 
 	# Flags
 	write_line_with_comments(file, f'{name} :: bit_set[{name.removesuffix("s")}; c.int]', enum)
@@ -889,8 +883,8 @@ def function_to_string(function, as_type=True) -> str:
 
 		default_value = None
 		if "default_value" in argument:
-			default_value = make_value_odiney(argument["default_value"], argument_type)
 			assert not as_type, "Not possible to have default args in type!"
+			default_value = make_value_odiney(argument["default_value"], argument_type)
 
 		if default_value: argument_list.append(f'{argument_name}: {argument_type} = {default_value}')
 		else:             argument_list.append(f'{argument_name}: {argument_type}')

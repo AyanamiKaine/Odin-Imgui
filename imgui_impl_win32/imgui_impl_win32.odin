@@ -18,7 +18,7 @@ else when ODIN_OS == .Darwin  {
 // This poses no issue for Odin, so we use HWND, and don't #if 0 out this function.
 
 // imgui_impl_win32.h
-// Last checked `v1.91.3-docking` (6df1a06)
+// Last checked `v1.91.4-docking` (6df1a06)
 @(link_prefix="ImGui_ImplWin32_")
 foreign lib {
 	Init          :: proc(hwnd: windows.HWND) -> bool ---
