@@ -95,6 +95,8 @@ You can mess with these all you want and see if it works.
 To update:
  - Use next `docking` tag in `build.py` (eg. if current tag is `v1.91.1-docking`, then take `v1.91.2-docking`)
  - Go over all `imgui_impl_xyz` files, check if they have changes on dear imgui, then update the "last update" comment.
+ - If an example stops working, the same process should be applied to these.
+ - Finally, all possible examples should be run.
 
 ## Help wanted!
 

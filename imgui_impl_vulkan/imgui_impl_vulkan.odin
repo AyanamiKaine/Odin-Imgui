@@ -10,7 +10,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_vulkan.h
-// Last checked `v1.91.1-docking` (6df1a0)
+// Last checked `v1.91.2-docking` (6df1a06)
 
 // Initialization data, for ImGui_ImplVulkan_Init()
 // - VkDescriptorPool should be created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,

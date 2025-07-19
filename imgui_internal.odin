@@ -316,6 +316,7 @@ LocKey :: enum c.int { // Forward declared enum type ImGuiLocKey
 	WindowingMainMenuBar,
 	WindowingPopup,
 	WindowingUntitled,
+	OpenLink_s,
 	CopyLink,
 	DockingHideTabBar,
 	DockingHoldShiftToDock,
@@ -779,20 +780,21 @@ InputTextDeactivatedState :: struct {
 	TextA: Vector_char, // text buffer
 }
 
+Stb_STB_TexteditState :: struct {
+}
+
 // Internal state of the currently focused/edited text input box
 // For a given item ID, access with ImGui::GetInputTextState()
 InputTextState :: struct {
 	Ctx:                  ^Context,       // parent UI context (needs to be set explicitly by parent).
+	Stb:                  rawptr,         // State for stb_textedit.h
 	ID_:                  ID,             // widget id owning the text state
-	CurLenW:              c.int,          // we need to maintain our buffer length in both UTF-8 and wchar format. UTF-8 length is valid even if TextA is not.
-	CurLenA:              c.int,          // we need to maintain our buffer length in both UTF-8 and wchar format. UTF-8 length is valid even if TextA is not.
-	TextW:                Vector_Wchar,   // edit buffer, we need to persist but can't guarantee the persistence of the user-provided buffer. so we copy into own buffer.
-	TextA:                Vector_char,    // temporary UTF8 buffer for callbacks and other operations. this is not updated in every code-path! size=capacity.
+	CurLenA:              c.int,          // UTF-8 length of the string in TextA (in bytes)
+	TextA:                Vector_char,    // main UTF8 buffer.
 	InitialTextA:         Vector_char,    // value to revert to when pressing Escape = backup of end-user buffer at the time of focus (in UTF-8, unaltered)
-	TextAIsValid:         bool,           // temporary UTF8 buffer is not initially valid before we make the widget active (until then we pull the data from user argument)
+	CallbackTextBackup:   Vector_char,    // temporary storage for callback to support automatic reconcile of undo-stack
 	BufCapacityA:         c.int,          // end-user buffer capacity
 	Scroll:               Vec2,           // horizontal offset (managed manually) + vertical scrolling (pulled from child window's own Scroll.y)
-	Stb:                  rawptr,         // state for stb_textedit.h
 	CursorAnim:           f32,            // timer for cursor blink, reset on every user action so the cursor reappears immediately
 	CursorFollow:         bool,           // set when we want scrolling to follow the current cursor position (not always!)
 	SelectedAllMouseLock: bool,           // after a double-click to select all, we ignore further mouse drags to update selection
@@ -1224,6 +1226,7 @@ ViewportP :: struct {
 	LastFocusedStampCount:   c.int,           // Last stamp number from when a window hosted by this viewport was focused (by comparing this value between two viewport we have an implicit viewport z-order we use as fallback)
 	LastNameHash:            ID,
 	LastPos:                 Vec2,
+	LastSize:                Vec2,
 	Alpha:                   f32,             // Window opacity (when dragging dockable windows/viewports we make them transparent)
 	LastAlpha:               f32,
 	LastFocusedHadNavWindow: bool,            // Instead of maintaining a LastFocusedWindow (which may harder to correctly maintain), we merely store weither NavWindow != NULL last time the viewport was focused.
@@ -1389,9 +1392,11 @@ Context :: struct {
 	WheelingWindowWheelRemainder:   Vec2,
 	WheelingAxisAvg:                Vec2,
 	// Item/widgets state and tracking information
+	DebugDrawIdConflicts:                     ID,          // Set when we detect multiple items with the same identifier
 	DebugHookIdInfo:                          ID,          // Will call core hooks: DebugHookIdInfo() from GetID functions, used by ID Stack Tool [next HoveredId/ActiveId to not pull in an extra cache-line]
 	HoveredId:                                ID,          // Hovered widget, filled during the frame
 	HoveredIdPreviousFrame:                   ID,
+	HoveredIdPreviousFrameItemCount:          c.int,       // Count numbers of items using the same ID as last frame's hovered id
 	HoveredIdTimer:                           f32,         // Measure contiguous hovering time
 	HoveredIdNotActiveTimer:                  f32,         // Measure contiguous hovering time where the item has not been active
 	HoveredIdAllowOverlap:                    bool,
@@ -2175,7 +2180,7 @@ foreign lib {
 	@(link_name="cImStrTrimBlanks") cImStrTrimBlanks :: proc(str: cstring)                                                                              --- // Remove leading and trailing blanks from a buffer.
 	@(link_name="cImStrSkipBlank")  cImStrSkipBlank  :: proc(str: cstring) -> cstring                                                                   --- // Find first non-blank character.
 	@(link_name="cImStrlenW")       cImStrlenW       :: proc(str: ^Wchar) -> c.int                                                                      --- // Computer string length (ImWchar string)
-	@(link_name="cImStrbolW")       cImStrbolW       :: proc(buf_mid_line: ^Wchar, buf_begin: ^Wchar) -> ^Wchar                                         --- // Find beginning-of-line (ImWchar string)
+	@(link_name="cImStrbol")        cImStrbol        :: proc(buf_mid_line: cstring, buf_begin: cstring) -> cstring                                      --- // Find beginning-of-line
 	@(link_name="cImToUpper")       cImToUpper       :: proc(_c: c.char) -> c.char                                                                      ---
 	@(link_name="cImCharIsBlankA")  cImCharIsBlankA  :: proc(_c: c.char) -> bool                                                                        ---
 	@(link_name="cImCharIsBlankW")  cImCharIsBlankW  :: proc(_c: c.uint) -> bool                                                                        ---
@@ -2301,11 +2306,10 @@ foreign lib {
 	@(link_name="ImGuiInputTextDeactivatedState_ClearFreeMemory")     InputTextDeactivatedState_ClearFreeMemory        :: proc(self: ^InputTextDeactivatedState)                                                   ---
 	@(link_name="ImGuiInputTextState_ClearText")                      InputTextState_ClearText                         :: proc(self: ^InputTextState)                                                              ---
 	@(link_name="ImGuiInputTextState_ClearFreeMemory")                InputTextState_ClearFreeMemory                   :: proc(self: ^InputTextState)                                                              ---
-	@(link_name="ImGuiInputTextState_GetUndoAvailCount")              InputTextState_GetUndoAvailCount                 :: proc(self: ^InputTextState) -> c.int                                                     ---
-	@(link_name="ImGuiInputTextState_GetRedoAvailCount")              InputTextState_GetRedoAvailCount                 :: proc(self: ^InputTextState) -> c.int                                                     ---
 	@(link_name="ImGuiInputTextState_OnKeyPressed")                   InputTextState_OnKeyPressed                      :: proc(self: ^InputTextState, key: c.int)                                                  --- // Cannot be inline because we call in code in stb_textedit.h implementation
+	@(link_name="ImGuiInputTextState_OnCharPressed")                  InputTextState_OnCharPressed                     :: proc(self: ^InputTextState, _c: c.uint)                                                  ---
 	// Cursor & Selection
-	@(link_name="ImGuiInputTextState_CursorAnimReset")   InputTextState_CursorAnimReset   :: proc(self: ^InputTextState)          --- // After a user-input the cursor stays on for a while without blinking
+	@(link_name="ImGuiInputTextState_CursorAnimReset")   InputTextState_CursorAnimReset   :: proc(self: ^InputTextState)          ---
 	@(link_name="ImGuiInputTextState_CursorClamp")       InputTextState_CursorClamp       :: proc(self: ^InputTextState)          ---
 	@(link_name="ImGuiInputTextState_HasSelection")      InputTextState_HasSelection      :: proc(self: ^InputTextState) -> bool  ---
 	@(link_name="ImGuiInputTextState_ClearSelection")    InputTextState_ClearSelection    :: proc(self: ^InputTextState)          ---
@@ -2424,13 +2428,13 @@ foreign lib {
 	@(link_name="ImGui_RemoveContextHook") RemoveContextHook :: proc(_context: ^Context, hook_to_remove: ID)       ---
 	@(link_name="ImGui_CallContextHooks")  CallContextHooks  :: proc(_context: ^Context, type: ContextHookType)    ---
 	// Viewports
-	@(link_name="ImGui_TranslateWindowsInViewport")                 TranslateWindowsInViewport                 :: proc(viewport: ^ViewportP, old_pos: Vec2, new_pos: Vec2) ---
-	@(link_name="ImGui_ScaleWindowsInViewport")                     ScaleWindowsInViewport                     :: proc(viewport: ^ViewportP, scale: f32)                   ---
-	@(link_name="ImGui_DestroyPlatformWindow")                      DestroyPlatformWindow                      :: proc(viewport: ^ViewportP)                               ---
-	@(link_name="ImGui_SetWindowViewport")                          SetWindowViewport                          :: proc(window: ^Window, viewport: ^ViewportP)              ---
-	@(link_name="ImGui_SetCurrentViewport")                         SetCurrentViewport                         :: proc(window: ^Window, viewport: ^ViewportP)              ---
-	@(link_name="ImGui_GetViewportPlatformMonitor")                 GetViewportPlatformMonitor                 :: proc(viewport: ^Viewport) -> ^PlatformMonitor            ---
-	@(link_name="ImGui_FindHoveredViewportFromPlatformWindowStack") FindHoveredViewportFromPlatformWindowStack :: proc(mouse_platform_pos: Vec2) -> ^ViewportP             ---
+	@(link_name="ImGui_TranslateWindowsInViewport")                 TranslateWindowsInViewport                 :: proc(viewport: ^ViewportP, old_pos: Vec2, new_pos: Vec2, old_size: Vec2, new_size: Vec2) ---
+	@(link_name="ImGui_ScaleWindowsInViewport")                     ScaleWindowsInViewport                     :: proc(viewport: ^ViewportP, scale: f32)                                                   ---
+	@(link_name="ImGui_DestroyPlatformWindow")                      DestroyPlatformWindow                      :: proc(viewport: ^ViewportP)                                                               ---
+	@(link_name="ImGui_SetWindowViewport")                          SetWindowViewport                          :: proc(window: ^Window, viewport: ^ViewportP)                                              ---
+	@(link_name="ImGui_SetCurrentViewport")                         SetCurrentViewport                         :: proc(window: ^Window, viewport: ^ViewportP)                                              ---
+	@(link_name="ImGui_GetViewportPlatformMonitor")                 GetViewportPlatformMonitor                 :: proc(viewport: ^Viewport) -> ^PlatformMonitor                                            ---
+	@(link_name="ImGui_FindHoveredViewportFromPlatformWindowStack") FindHoveredViewportFromPlatformWindowStack :: proc(mouse_platform_pos: Vec2) -> ^ViewportP                                             ---
 	// Settings
 	@(link_name="ImGui_MarkIniSettingsDirty")               MarkIniSettingsDirty               :: proc()                                       ---
 	@(link_name="ImGui_MarkIniSettingsDirtyImGuiWindowPtr") MarkIniSettingsDirtyImGuiWindowPtr :: proc(window: ^Window)                        ---

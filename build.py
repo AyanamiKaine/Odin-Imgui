@@ -17,7 +17,7 @@ import random
 # @CONFIGURE: Must be key into below table
 # Note that the backend files and examples may also have to be updated, if you use these.
 git_heads = {
-	"imgui": "v1.91.1-docking",
+	"imgui": "v1.91.2-docking",
 	"dear_bindings": "81c906b",
 }
 
@@ -139,7 +139,8 @@ def ensure_checked_out_with_commit(dir: str, repo: str, wanted_commit: str):
 	if not path.exists(dir):
 		exec(["git", "clone", repo, dir], f"Cloning {dir}")
 
-	exec(["git", "-c", "advice.detachedHead=false", "-C", dir, "checkout", "-f", wanted_commit], f"Checking out {dir}")
+	exec(["git", "-C", dir, "fetch"], f"Fetching latest commits for {dir}")
+	exec(["git", "-c", "advice.detachedHead=false", "-C", dir, "checkout", "--force", wanted_commit], f"Checking out {dir}")
 
 def get_platform_imgui_lib_name() -> str:
 	""" Returns imgui binary name for system/processor """

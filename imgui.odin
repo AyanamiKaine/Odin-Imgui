@@ -33,8 +33,8 @@ CHECKVERSION :: proc() {
 // DEFINES
 ////////////////////////////////////////////////////////////
 
-VERSION                      :: "1.91.1"
-VERSION_NUM                  :: 19110
+VERSION                      :: "1.91.2"
+VERSION_NUM                  :: 19120
 PAYLOAD_TYPE_COLOR_3F        :: "_COL3F" // float[3]: Standard type for colors, without alpha. User code may use this type.
 PAYLOAD_TYPE_COLOR_4F        :: "_COL4F" // float[4]: Standard type for colors. User code may use this type.
 UNICODE_CODEPOINT_INVALID    :: 0xFFFD   // Invalid Unicode code point (standard value).
@@ -117,6 +117,7 @@ ItemFlag :: enum c.int {
 	NoNavDefaultFocus = 2, // false    // Disable item being a candidate for default focus (e.g. used by title bar items).
 	ButtonRepeat      = 3, // false    // Any button-like behavior will have repeat mode enabled (based on io.KeyRepeatDelay and io.KeyRepeatRate values). Note that you can also call IsItemActive() after any button to tell if it is being held.
 	AutoClosePopups   = 4, // true     // MenuItem()/Selectable() automatically close their parent popup window.
+	AllowDuplicateId  = 5, // false    // Allow submitting an item with the same identifier as an item already submitted this frame without triggering a warning tooltip if io.ConfigDebugHighlightIdConflicts is set.
 }
 
 
@@ -1324,19 +1325,20 @@ KeyData :: struct {
 }
 
 IO :: struct {
-	ConfigFlags:             ConfigFlags,  // = 0              // See ImGuiConfigFlags_ enum. Set by user/application. Gamepad/keyboard navigation options, etc.
-	BackendFlags:            BackendFlags, // = 0              // See ImGuiBackendFlags_ enum. Set by backend (imgui_impl_xxx files or custom backend) to communicate features supported by the backend.
-	DisplaySize:             Vec2,         // <unset>          // Main display size, in pixels (generally == GetMainViewport()->Size). May change every frame.
-	DeltaTime:               f32,          // = 1.0f/60.0f     // Time elapsed since last frame, in seconds. May change every frame.
-	IniSavingRate:           f32,          // = 5.0f           // Minimum time between saving positions/sizes to .ini file, in seconds.
-	IniFilename:             cstring,      // = "imgui.ini"    // Path to .ini file (important: default "imgui.ini" is relative to current working dir!). Set NULL to disable automatic .ini loading/saving or if you want to manually call LoadIniSettingsXXX() / SaveIniSettingsXXX() functions.
-	LogFilename:             cstring,      // = "imgui_log.txt"// Path to .log file (default parameter to ImGui::LogToFile when no file is specified).
-	UserData:                rawptr,       // = NULL           // Store your own data.
-	Fonts:                   ^FontAtlas,   // <auto>           // Font atlas: load, rasterize and pack one or more fonts into a single texture.
-	FontGlobalScale:         f32,          // = 1.0f           // Global scale all fonts
-	FontAllowUserScaling:    bool,         // = false          // Allow user scaling text of individual window with CTRL+Wheel.
-	FontDefault:             ^Font,        // = NULL           // Font to use on NewFrame(). Use NULL to uses Fonts->Fonts[0].
-	DisplayFramebufferScale: Vec2,         // = (1, 1)         // For retina display or other situations where window coordinates are different from framebuffer coordinates. This generally ends up in ImDrawData::FramebufferScale.
+	ConfigFlags:   ConfigFlags,  // = 0              // See ImGuiConfigFlags_ enum. Set by user/application. Gamepad/keyboard navigation options, etc.
+	BackendFlags:  BackendFlags, // = 0              // See ImGuiBackendFlags_ enum. Set by backend (imgui_impl_xxx files or custom backend) to communicate features supported by the backend.
+	DisplaySize:   Vec2,         // <unset>          // Main display size, in pixels (generally == GetMainViewport()->Size). May change every frame.
+	DeltaTime:     f32,          // = 1.0f/60.0f     // Time elapsed since last frame, in seconds. May change every frame.
+	IniSavingRate: f32,          // = 5.0f           // Minimum time between saving positions/sizes to .ini file, in seconds.
+	IniFilename:   cstring,      // = "imgui.ini"    // Path to .ini file (important: default "imgui.ini" is relative to current working dir!). Set NULL to disable automatic .ini loading/saving or if you want to manually call LoadIniSettingsXXX() / SaveIniSettingsXXX() functions.
+	LogFilename:   cstring,      // = "imgui_log.txt"// Path to .log file (default parameter to ImGui::LogToFile when no file is specified).
+	UserData:      rawptr,       // = NULL           // Store your own data.
+	// Font system
+	Fonts:                   ^FontAtlas, // <auto>           // Font atlas: load, rasterize and pack one or more fonts into a single texture.
+	FontGlobalScale:         f32,        // = 1.0f           // Global scale all fonts
+	FontAllowUserScaling:    bool,       // = false          // Allow user scaling text of individual window with CTRL+Wheel.
+	FontDefault:             ^Font,      // = NULL           // Font to use on NewFrame(). Use NULL to uses Fonts->Fonts[0].
+	DisplayFramebufferScale: Vec2,       // = (1, 1)         // For retina display or other situations where window coordinates are different from framebuffer coordinates. This generally ends up in ImDrawData::FramebufferScale.
 	// Docking options (when ImGuiConfigFlags_DockingEnable is set)
 	ConfigDockingNoSplit:            bool, // = false          // Simplified docking mode: disable window splitting, so docking is limited to merging multiple windows together into tab-bars.
 	ConfigDockingWithShift:          bool, // = false          // Enable docking with holding Shift key (reduce visual noise, allows dropping in wider space)
@@ -1348,6 +1350,7 @@ IO :: struct {
 	ConfigViewportsNoDecoration:    bool, // = true           // Disable default OS window decoration flag for secondary viewports. When a viewport doesn't want window decorations, ImGuiViewportFlags_NoDecoration will be set on it. Enabling decoration can create subsequent issues at OS levels (e.g. minimum window size).
 	ConfigViewportsNoDefaultParent: bool, // = false          // Disable default OS parenting to main viewport for secondary viewports. By default, viewports are marked with ParentViewportId = <main_viewport>, expecting the platform backend to setup a parent/child relationship between the OS windows (some backend may ignore this). Set to true if you want the default to be 0, then all viewports will be top-level OS windows.
 	// Miscellaneous options
+	// (you can visualize and interact with all options in 'Demo->Configuration')
 	MouseDrawCursor:                   bool, // = false          // Request ImGui to draw a mouse cursor for you (if you are on a platform without a mouse cursor). Cannot be easily renamed to 'io.ConfigXXX' because this is frequently used by backend implementations.
 	ConfigMacOSXBehaviors:             bool, // = defined(__APPLE__) // Swap Cmd<>Ctrl keys + OS X style text editing cursor movement using Alt instead of Ctrl, Shortcuts using Cmd/Super instead of Ctrl, Line/Text Start and End using Cmd+Arrows instead of Home/End, Double click selects by word instead of selecting whole text, Multi-selection in lists uses Cmd/Super instead of Ctrl.
 	ConfigNavSwapGamepadButtons:       bool, // = false          // Swap Activate<>Cancel (A<>B) buttons, matching typical "Nintendo/Japanese style" gamepad layout.
@@ -1370,6 +1373,11 @@ IO :: struct {
 	// - Requires a debugger being attached, otherwise IM_DEBUG_BREAK() options will appear to crash your application.
 	//   e.g. io.ConfigDebugIsDebuggerPresent = ::IsDebuggerPresent() on Win32, or refer to ImOsIsDebuggerPresent() imgui_test_engine/imgui_te_utils.cpp for a Unix compatible version).
 	ConfigDebugIsDebuggerPresent: bool, // = false          // Enable various tools calling IM_DEBUG_BREAK().
+	// Tools to detect code submitting items with conflicting/duplicate IDs
+	// - Code should use PushID()/PopID() in loops, or append "##xx" to same-label identifiers.
+	// - Empty label e.g. Button("") == same ID as parent widget/node. Use Button("##xx") instead!
+	// - See FAQ https://github.com/ocornut/imgui/blob/master/docs/FAQ.md#q-about-the-id-stack-system
+	ConfigDebugHighlightIdConflicts: bool, // = true           // Highlight and show an error message when multiple items have conflicting identifiers.
 	// Tools to test correct Begin/End and BeginChild/EndChild behaviors.
 	// - Presently Begin()/End() and BeginChild()/EndChild() needs to ALWAYS be called in tandem, regardless of return value of BeginXXX()
 	// - This is inconsistent with other BeginXXX functions and create confusion for many users.
