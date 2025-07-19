@@ -10,7 +10,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_sdlrenderer2.h
-// Last checked `v1.91.4-docking` (514a97a)
+// Last checked `v1.91.6-docking` (a9cd0f5)
 @(link_prefix="ImGui_ImplSDLRenderer2_")
 foreign lib {
 	Init           :: proc(renderer: ^sdl.Renderer) -> bool ---

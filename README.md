@@ -82,7 +82,7 @@ It seems likely to me that SDL3, and maybe Android will exist in vendor in the f
 | SDL_Renderer 2 |     Yes      |     Yes     | Has example, but Odin vendor library lacks required version (2.0.18) |
 | SDL_Renderer 3 |      No      |     No      | No odin bindings in vendor (yet)                                     |
 | Vulkan         |     Yes      |     No      | Tested in my own engine, but no example yet due to size              |
-| win32          |     Yes      |     No      | Bindings created, but not tested                                     |
+| win32          |     Yes      |     No      | Bindings created, but not tested. Note: as of v1.91.5, this backend can no longer be compiled due to ImGui_ImplWin32_WndProcHandler and ImGui_ImplWin32_WndProcHandlerEx |
 | JS             |     Yes      |     Yes     | Native Odin backend - Docking doesn't work for some reason           |
 | WebGPU         |     Yes      |     Yes     | Native Odin backend                                                  |
 | WebGL          |     Yes      |     Yes     | Native Odin backend - WebGL 2 only                                   |

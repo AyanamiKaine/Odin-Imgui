@@ -13,29 +13,41 @@ else when ODIN_OS == .Darwin  {
 	when ODIN_ARCH == .amd64 { foreign import lib "../imgui_darwin_x64.a" } else { foreign import lib "../imgui_darwin_arm64.a" }
 }
 
+// Initialization data, for ImGui_ImplDX12_Init()
+InitInfo :: struct {
+	Device:            ^d3d12.IDevice,
+	CommandQueue:      ^d3d12.ICommandQueue,
+	NumFramesInFlight: i32,
+	RTVFormat:         dxgi.FORMAT,          // RenderTarget format.
+	DSVFormat:         dxgi.FORMAT,          // DepthStencilView format.
+	UserData:          rawptr,
+
+	// Allocating SRV descriptors for textures is up to the application, so we provide callbacks.
+	// (current version of the backend will only allocate one descriptor, future versions will need to allocate more)
+	SrvDescriptorHeap:    ^d3d12.IDescriptorHeap,
+	SrvDescriptorAllocFn: proc "c" (info: ^InitInfo, out_cpu_desc_handle: ^d3d12.CPU_DESCRIPTOR_HANDLE, out_gpu_desc_handle: ^d3d12.GPU_DESCRIPTOR_HANDLE),
+	SrvDescriptorFreeFn:  proc "c" (info: ^InitInfo, cpu_desc_handle: d3d12.CPU_DESCRIPTOR_HANDLE, gpu_desc_handle: d3d12.GPU_DESCRIPTOR_HANDLE),
+}
+
 // imgui_impl_dx12.h
-// Last checked `v1.91.4-docking` (514a97a)
+// Last checked `v1.91.6-docking` (a9cd0f5)
 @(link_prefix="ImGui_ImplDX12_")
 foreign lib {
-	// cmd_list is the command list that the implementation will use to render imgui draw lists.
-	// Before calling the render function, caller must prepare cmd_list by resetting it and setting the appropriate
-	// render target and descriptor heap that contains font_srv_cpu_desc_handle/font_srv_gpu_desc_handle.
-	// font_srv_cpu_desc_handle and font_srv_gpu_desc_handle are handles to a single SRV descriptor to use for the internal font texture.
-	Init :: proc(device: ^d3d12.IDevice, num_frames_in_flight: c.int, rtv_format: dxgi.FORMAT, cbv_srv_heap: ^d3d12.IDescriptorHeap,
-		font_srv_cpu_desc_handle: d3d12.CPU_DESCRIPTOR_HANDLE, font_srv_gpu_desc_handle: d3d12.GPU_DESCRIPTOR_HANDLE) -> bool ---
+	// Follow "Getting Started" link and check examples/ folder to learn about using backends!
+	Init           :: proc(info: ^InitInfo) -> bool ---
 	Shutdown       :: proc() ---
 	NewFrame       :: proc() ---
 	RenderDrawData :: proc(draw_data: ^imgui.DrawData, graphics_command_list: ^d3d12.IGraphicsCommandList) ---
 
 	// Use if you want to reset your rendering device without losing Dear ImGui state.
-	InvalidateDeviceObjects :: proc() ---
 	CreateDeviceObjects     :: proc() -> bool ---
+	InvalidateDeviceObjects :: proc() ---
 }
 
 // [BETA] Selected render state data shared with callbacks.
 // This is temporarily stored in GetPlatformIO().Renderer_RenderState during the ImGui_ImplDX12_RenderDrawData() call.
 // (Please open an issue if you feel you need access to more data)
 RenderState :: struct {
-    Device:      ^d3d12.IDevice,
-    CommandList: ^d3d12.IGraphicsCommandList,
+	Device:      ^d3d12.IDevice,
+	CommandList: ^d3d12.IGraphicsCommandList,
 }

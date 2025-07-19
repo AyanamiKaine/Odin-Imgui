@@ -17,14 +17,14 @@ import random
 # @CONFIGURE: Must be key into below table
 # Note that the backend files and examples may also have to be updated, if you use these.
 git_heads = {
-	"imgui": "v1.91.4-docking",
+	"imgui": "v1.91.6-docking",
 	"dear_bindings": "81c906b",
 }
 
 # Note - tested with Odin version `dev-2025-07`
 
 # @CONFIGURE: Elements must be keys into below table
-wanted_backends = ["vulkan", "sdl2", "opengl3", "sdlrenderer2", "glfw", "dx11", "dx12", "win32", "osx", "metal", "wgpu", "webgl"]
+wanted_backends = ["vulkan", "sdl2", "opengl3", "sdlrenderer2", "glfw", "dx11", "dx12", "osx", "metal", "wgpu", "webgl"]
 # Supported means that an impl bindings file exists, and that it has been tested.
 # Some backends (like dx12, win32) have bindings but not been tested.
 backends = {
@@ -171,6 +171,8 @@ def did_re_execute() -> bool:
 
 def compile(backend_deps_names: typing.Set[str], all_sources: typing.List[str], wasm: bool):
 	# Basic flags
+	# We aren't meant to have IMGUI_IMPL_API be extern "C"?
+	# https://github.com/ocornut/imgui/issues/7930#issuecomment-2319725332
 	if wasm:
 		compile_flags = ['-DIMGUI_IMPL_API=extern\"C\"', "-DIMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS", "-DIMGUI_DISABLE_FILE_FUNCTIONS", "--target=wasm32", "-mbulk-memory", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-nostdlib++", "-fno-use-cxa-atexit"]
 

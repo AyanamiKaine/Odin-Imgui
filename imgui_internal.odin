@@ -117,13 +117,16 @@ LayoutType :: enum c.int {
 	Vertical,
 }
 
-LogType :: enum c.int {
-	None,
-	TTY,
-	File,
-	Buffer,
-	Clipboard,
+// Flags for LogBegin() text capturing function
+LogFlags :: bit_set[LogFlag; c.int]
+LogFlag :: enum c.int {
+	OutputTTY       = 0,
+	OutputFile      = 1,
+	OutputBuffer    = 2,
+	OutputClipboard = 3,
 }
+
+LogFlags_OutputMask_ :: LogFlags{.OutputTTY,.OutputFile,.OutputBuffer,.OutputClipboard}
 
 // X/Y enums are fixed to 0/1 so they may be used to index ImVec2
 Axis :: enum c.int {
@@ -231,10 +234,6 @@ NavRenderCursorFlag :: enum c.int {
 	NoRounding = 3,
 }
 
-NavRenderCursorFlags_ImGuiNavHighlightFlags_None       :: NavRenderCursorFlags{}            // Renamed in 1.91.4
-NavRenderCursorFlags_ImGuiNavHighlightFlags_Compact    :: NavRenderCursorFlags{.Compact}    // Renamed in 1.91.4
-NavRenderCursorFlags_ImGuiNavHighlightFlags_AlwaysDraw :: NavRenderCursorFlags{.AlwaysDraw} // Renamed in 1.91.4
-NavRenderCursorFlags_ImGuiNavHighlightFlags_NoRounding :: NavRenderCursorFlags{.NoRounding} // Renamed in 1.91.4
 
 NavMoveFlags :: bit_set[NavMoveFlag; c.int]
 NavMoveFlag :: enum c.int {
@@ -329,6 +328,7 @@ LocKey :: enum c.int { // Forward declared enum type ImGuiLocKey
 	COUNT,
 }
 
+// See IMGUI_DEBUG_LOG() and IMGUI_DEBUG_LOG_XXX() macros.
 DebugLogFlags :: bit_set[DebugLogFlag; c.int]
 DebugLogFlag :: enum c.int {
 	EventError         = 0,  // Error submitted by IM_ASSERT_USER_ERROR()
@@ -339,14 +339,15 @@ DebugLogFlag :: enum c.int {
 	EventClipper       = 5,
 	EventSelection     = 6,
 	EventIO            = 7,
-	EventInputRouting  = 8,
-	EventDocking       = 9,
-	EventViewport      = 10,
+	EventFont          = 8,
+	EventInputRouting  = 9,
+	EventDocking       = 10,
+	EventViewport      = 11,
 	OutputToTTY        = 20, // Also send output to TTY
 	OutputToTestEngine = 21, // Also send output to Test Engine
 }
 
-DebugLogFlags_EventMask_ :: DebugLogFlags{.EventError,.EventActiveId,.EventFocus,.EventPopup,.EventNav,.EventClipper,.EventSelection,.EventIO,.EventInputRouting,.EventDocking,.EventViewport}
+DebugLogFlags_EventMask_ :: DebugLogFlags{.EventError,.EventActiveId,.EventFocus,.EventPopup,.EventNav,.EventClipper,.EventSelection,.EventIO,.EventFont,.EventInputRouting,.EventDocking,.EventViewport}
 
 ContextHookType :: enum c.int {
 	NewFramePre,
@@ -425,9 +426,12 @@ Span_ImGuiTableCellData :: struct {
 }
 
 // Data shared between all ImDrawList instances
-// You may want to create your own instance of this if you want to use ImDrawList completely without ImGui. In that case, watch out for future changes to this structure.
+// Conceptually this could have been called e.g. ImDrawListSharedContext
+// Typically one ImGui context would create and maintain one of this.
+// You may want to create your own instance of you try to ImDrawList completely without ImGui. In that case, watch out for future changes to this structure.
 DrawListSharedData :: struct {
 	TexUvWhitePixel:       Vec2,          // UV of white pixel in the atlas
+	TexUvLines:            ^Vec4,         // UV of anti-aliased lines in the atlas
 	Font_:                 ^Font,         // Current/default font (optional, for simplified AddText overload)
 	FontSize:              f32,           // Current/default font size (optional, for simplified AddText overload)
 	FontScale:             f32,           // Current/default font scale (== FontSize / Font->FontSize)
@@ -435,13 +439,11 @@ DrawListSharedData :: struct {
 	CircleSegmentMaxError: f32,           // Number of circle segments to use per pixel of radius for AddCircle() etc
 	ClipRectFullscreen:    Vec4,          // Value for PushClipRectFullscreen()
 	InitialFlags:          DrawListFlags, // Initial flags at the beginning of the frame (it is possible to alter flags on a per-drawlist basis afterwards)
-	// [Internal] Temp write buffer
-	TempBuffer: Vector_Vec2,
-	// [Internal] Lookup tables
+	TempBuffer:            Vector_Vec2,   // Temporary write buffer
+	// Lookup tables
 	ArcFastVtx:          [DRAWLIST_ARCFAST_TABLE_SIZE]Vec2, // Sample points on the quarter of the circle.
 	ArcFastRadiusCutoff: f32,                               // Cutoff radius after which arc drawing will fallback to slower PathArcTo()
 	CircleSegmentCounts: [64]u8,                            // Precomputed segment count for given radius before we calculate it dynamically (to avoid calculation overhead)
-	TexUvLines:          ^Vec4,                             // UV of anti-aliased lines in the atlas
 }
 
 DrawDataBuilder :: struct {
@@ -795,11 +797,11 @@ InputTextState :: struct {
 	Ctx:                  ^Context,       // parent UI context (needs to be set explicitly by parent).
 	Stb:                  rawptr,         // State for stb_textedit.h
 	ID_:                  ID,             // widget id owning the text state
-	CurLenA:              c.int,          // UTF-8 length of the string in TextA (in bytes)
-	TextA:                Vector_char,    // main UTF8 buffer.
-	InitialTextA:         Vector_char,    // value to revert to when pressing Escape = backup of end-user buffer at the time of focus (in UTF-8, unaltered)
+	TextLen:              c.int,          // UTF-8 length of the string in TextA (in bytes)
+	TextA:                Vector_char,    // main UTF8 buffer. TextA.Size is a buffer size! Should always be >= buf_size passed by user (and of course >= CurLenA + 1).
+	TextToRevertTo:       Vector_char,    // value to revert to when pressing Escape = backup of end-user buffer at the time of focus (in UTF-8, unaltered)
 	CallbackTextBackup:   Vector_char,    // temporary storage for callback to support automatic reconcile of undo-stack
-	BufCapacityA:         c.int,          // end-user buffer capacity
+	BufCapacity:          c.int,          // end-user buffer capacity (include zero terminator)
 	Scroll:               Vec2,           // horizontal offset (managed manually) + vertical scrolling (pulled from child window's own Scroll.y)
 	CursorAnim:           f32,            // timer for cursor blink, reset on every user action so the cursor reappears immediately
 	CursorFollow:         bool,           // set when we want scrolling to follow the current cursor position (not always!)
@@ -1647,7 +1649,8 @@ Context :: struct {
 	LocalizationTable: [LocKey.COUNT]cstring,
 	// Capture/Logging
 	LogEnabled:              bool,       // Currently capturing
-	LogType:                 LogType,    // Capture target
+	LogFlags:                LogFlags,   // Capture flags/type
+	LogWindow:               ^Window,
 	LogFile:                 FileHandle, // If != NULL log to stdout/ file
 	LogBuffer:               TextBuffer, // Accumulation buffer when log to clipboard. This is pointer so our GImGui static constructor doesn't call heap allocators.
 	LogNextPrefix:           cstring,
@@ -2170,7 +2173,8 @@ TableSettings :: struct {
 	WantApply:       bool,           // Set when loaded from .ini data (to enable merging/loading .ini data into an already running context)
 }
 
-// This structure is likely to evolve as we add support for incremental atlas updates
+// This structure is likely to evolve as we add support for incremental atlas updates.
+// Conceptually this could be in ImGuiPlatformIO, but we are far from ready to make this public.
 FontBuilderIO :: struct {
 	FontBuilder_Build: proc "c" (atlas: ^FontAtlas) -> bool,
 }
@@ -2396,6 +2400,8 @@ foreign lib {
 	// If this ever crashes because g.CurrentWindow is NULL, it means that either:
 	// - ImGui::NewFrame() has never been called, which is illegal.
 	// - You are calling ImGui functions after ImGui::EndFrame()/ImGui::Render() and before the next ImGui::NewFrame(), which is also illegal.
+	@(link_name="ImGui_GetIOEx")                                    GetIOEx                                    :: proc(ctx: ^Context) -> ^IO                                                                            ---
+	@(link_name="ImGui_GetPlatformIOEx")                            GetPlatformIOEx                            :: proc(ctx: ^Context) -> ^PlatformIO                                                                    ---
 	@(link_name="ImGui_GetCurrentWindowRead")                       GetCurrentWindowRead                       :: proc() -> ^Window                                                                                     ---
 	@(link_name="ImGui_GetCurrentWindow")                           GetCurrentWindow                           :: proc() -> ^Window                                                                                     ---
 	@(link_name="ImGui_FindWindowByID")                             FindWindowByID                             :: proc(id: ID) -> ^Window                                                                               ---
@@ -2514,7 +2520,7 @@ foreign lib {
 	@(link_name="ImGui_BeginDisabledOverrideReenable") BeginDisabledOverrideReenable :: proc()                              ---
 	@(link_name="ImGui_EndDisabledOverrideReenable")   EndDisabledOverrideReenable   :: proc()                              ---
 	// Logging/Capture
-	@(link_name="ImGui_LogBegin")                 LogBegin                 :: proc(type: LogType, auto_open_depth: c.int)                  --- // -> BeginCapture() when we design v2 api, for now stay under the radar by using the old name.
+	@(link_name="ImGui_LogBegin")                 LogBegin                 :: proc(flags: LogFlags, auto_open_depth: c.int)                --- // -> BeginCapture() when we design v2 api, for now stay under the radar by using the old name.
 	@(link_name="ImGui_LogToBuffer")              LogToBuffer              :: proc(auto_open_depth: c.int = -1)                            --- // Start logging/capturing to internal buffer
 	@(link_name="ImGui_LogRenderedText")          LogRenderedText          :: proc(ref_pos: ^Vec2, text: cstring, text_end: cstring = nil) ---
 	@(link_name="ImGui_LogSetNextTextDecoration") LogSetNextTextDecoration :: proc(prefix: cstring, suffix: cstring)                       ---
@@ -2825,7 +2831,6 @@ foreign lib {
 	@(link_name="ImGui_RenderFrameBorder")                    RenderFrameBorder                    :: proc(p_min: Vec2, p_max: Vec2, rounding: f32 = 0.0)                                                                                                                 ---
 	@(link_name="ImGui_RenderColorRectWithAlphaCheckerboard") RenderColorRectWithAlphaCheckerboard :: proc(draw_list: ^DrawList, p_min: Vec2, p_max: Vec2, fill_col: u32, grid_step: f32, grid_off: Vec2, rounding: f32 = 0.0, flags: DrawFlags = {})                     ---
 	@(link_name="ImGui_RenderNavCursor")                      RenderNavCursor                      :: proc(bb: Rect, id: ID, flags: NavRenderCursorFlags)                                                                                                                 --- // Navigation highlight
-	@(link_name="ImGui_RenderNavHighlight")                   RenderNavHighlight                   :: proc(bb: Rect, id: ID, flags: NavRenderCursorFlags)                                                                                                                 --- // Renamed in 1.91.4
 	@(link_name="ImGui_FindRenderedTextEnd")                  FindRenderedTextEnd                  :: proc(text: cstring, text_end: cstring = nil) -> cstring                                                                                                             --- // Find the optional ## from which we stop displaying text.
 	@(link_name="ImGui_RenderMouseCursor")                    RenderMouseCursor                    :: proc(pos: Vec2, scale: f32, mouse_cursor: MouseCursor, col_fill: u32, col_border: u32, col_shadow: u32)                                                             ---
 	// Render helpers (those functions don't access any ImGui state!)
@@ -2838,23 +2843,23 @@ foreign lib {
 	@(link_name="ImGui_RenderRectFilledWithHole")       RenderRectFilledWithHole       :: proc(draw_list: ^DrawList, outer: Rect, inner: Rect, col: u32, rounding: f32)                       ---
 	@(link_name="ImGui_CalcRoundingFlagsForRectInRect") CalcRoundingFlagsForRectInRect :: proc(r_in: Rect, r_outer: Rect, threshold: f32) -> DrawFlags                                        ---
 	// Widgets
-	@(link_name="ImGui_TextEx")                TextEx                :: proc(text: cstring, text_end: cstring = nil, flags: TextFlags = {})                                                                        ---
-	@(link_name="ImGui_ButtonWithFlags")       ButtonWithFlags       :: proc(label: cstring, size_arg: Vec2 = {0, 0}, flags: ButtonFlags = {}) -> bool                                                             ---
-	@(link_name="ImGui_ArrowButtonEx")         ArrowButtonEx         :: proc(str_id: cstring, dir: Dir, size_arg: Vec2, flags: ButtonFlags = {}) -> bool                                                           ---
-	@(link_name="ImGui_ImageButtonWithFlags")  ImageButtonWithFlags  :: proc(id: ID, texture_id: TextureID, image_size: Vec2, uv0: Vec2, uv1: Vec2, bg_col: Vec4, tint_col: Vec4, flags: ButtonFlags = {}) -> bool ---
-	@(link_name="ImGui_SeparatorEx")           SeparatorEx           :: proc(flags: SeparatorFlags, thickness: f32 = 1.0)                                                                                          ---
-	@(link_name="ImGui_SeparatorTextEx")       SeparatorTextEx       :: proc(id: ID, label: cstring, label_end: cstring, extra_width: f32)                                                                         ---
-	@(link_name="ImGui_CheckboxFlagsImS64Ptr") CheckboxFlagsImS64Ptr :: proc(label: cstring, flags: ^i64, flags_value: i64) -> bool                                                                                ---
-	@(link_name="ImGui_CheckboxFlagsImU64Ptr") CheckboxFlagsImU64Ptr :: proc(label: cstring, flags: ^u64, flags_value: u64) -> bool                                                                                ---
+	@(link_name="ImGui_TextEx")                TextEx                :: proc(text: cstring, text_end: cstring = nil, flags: TextFlags = {})                                                                             ---
+	@(link_name="ImGui_ButtonWithFlags")       ButtonWithFlags       :: proc(label: cstring, size_arg: Vec2 = {0, 0}, flags: ButtonFlags = {}) -> bool                                                                  ---
+	@(link_name="ImGui_ArrowButtonEx")         ArrowButtonEx         :: proc(str_id: cstring, dir: Dir, size_arg: Vec2, flags: ButtonFlags = {}) -> bool                                                                ---
+	@(link_name="ImGui_ImageButtonWithFlags")  ImageButtonWithFlags  :: proc(id: ID, user_texture_id: TextureID, image_size: Vec2, uv0: Vec2, uv1: Vec2, bg_col: Vec4, tint_col: Vec4, flags: ButtonFlags = {}) -> bool ---
+	@(link_name="ImGui_SeparatorEx")           SeparatorEx           :: proc(flags: SeparatorFlags, thickness: f32 = 1.0)                                                                                               ---
+	@(link_name="ImGui_SeparatorTextEx")       SeparatorTextEx       :: proc(id: ID, label: cstring, label_end: cstring, extra_width: f32)                                                                              ---
+	@(link_name="ImGui_CheckboxFlagsImS64Ptr") CheckboxFlagsImS64Ptr :: proc(label: cstring, flags: ^i64, flags_value: i64) -> bool                                                                                     ---
+	@(link_name="ImGui_CheckboxFlagsImU64Ptr") CheckboxFlagsImU64Ptr :: proc(label: cstring, flags: ^u64, flags_value: u64) -> bool                                                                                     ---
 	// Widgets: Window Decorations
-	@(link_name="ImGui_CloseButton")             CloseButton             :: proc(id: ID, pos: Vec2) -> bool                                                                               ---
-	@(link_name="ImGui_CollapseButton")          CollapseButton          :: proc(id: ID, pos: Vec2, dock_node: ^DockNode) -> bool                                                         ---
-	@(link_name="ImGui_Scrollbar")               Scrollbar               :: proc(axis: Axis)                                                                                              ---
-	@(link_name="ImGui_ScrollbarEx")             ScrollbarEx             :: proc(bb: Rect, id: ID, axis: Axis, p_scroll_v: ^i64, avail_v: i64, contents_v: i64, flags: DrawFlags) -> bool ---
-	@(link_name="ImGui_GetWindowScrollbarRect")  GetWindowScrollbarRect  :: proc(window: ^Window, axis: Axis) -> Rect                                                                     ---
-	@(link_name="ImGui_GetWindowScrollbarID")    GetWindowScrollbarID    :: proc(window: ^Window, axis: Axis) -> ID                                                                       ---
-	@(link_name="ImGui_GetWindowResizeCornerID") GetWindowResizeCornerID :: proc(window: ^Window, n: c.int) -> ID                                                                         --- // 0..3: corners
-	@(link_name="ImGui_GetWindowResizeBorderID") GetWindowResizeBorderID :: proc(window: ^Window, dir: Dir) -> ID                                                                         ---
+	@(link_name="ImGui_CloseButton")             CloseButton             :: proc(id: ID, pos: Vec2) -> bool                                                                                                  ---
+	@(link_name="ImGui_CollapseButton")          CollapseButton          :: proc(id: ID, pos: Vec2, dock_node: ^DockNode) -> bool                                                                            ---
+	@(link_name="ImGui_Scrollbar")               Scrollbar               :: proc(axis: Axis)                                                                                                                 ---
+	@(link_name="ImGui_ScrollbarEx")             ScrollbarEx             :: proc(bb: Rect, id: ID, axis: Axis, p_scroll_v: ^i64, avail_v: i64, contents_v: i64, draw_rounding_flags: DrawFlags = {}) -> bool ---
+	@(link_name="ImGui_GetWindowScrollbarRect")  GetWindowScrollbarRect  :: proc(window: ^Window, axis: Axis) -> Rect                                                                                        ---
+	@(link_name="ImGui_GetWindowScrollbarID")    GetWindowScrollbarID    :: proc(window: ^Window, axis: Axis) -> ID                                                                                          ---
+	@(link_name="ImGui_GetWindowResizeCornerID") GetWindowResizeCornerID :: proc(window: ^Window, n: c.int) -> ID                                                                                            --- // 0..3: corners
+	@(link_name="ImGui_GetWindowResizeBorderID") GetWindowResizeBorderID :: proc(window: ^Window, dir: Dir) -> ID                                                                                            ---
 	// Widgets low-level behaviors
 	@(link_name="ImGui_ButtonBehavior")   ButtonBehavior   :: proc(bb: Rect, id: ID, out_hovered: ^bool, out_held: ^bool, flags: ButtonFlags = {}) -> bool                                                                                      ---
 	@(link_name="ImGui_DragBehavior")     DragBehavior     :: proc(id: ID, data_type: DataType, p_v: rawptr, v_speed: f32, p_min: rawptr, p_max: rawptr, format: cstring, flags: SliderFlags) -> bool                                           ---
