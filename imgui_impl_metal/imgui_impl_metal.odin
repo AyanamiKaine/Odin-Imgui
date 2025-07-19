@@ -21,7 +21,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_metal.h
-// Last checked `v1.91.6-docking` (a9cd0f5)
+// Last checked `v1.91.7-docking` (a9cd0f5)
 @(link_prefix="ImGui_ImplMetal_")
 foreign lib {
 	Init           :: proc(device: ^mtl.Device) -> bool ---

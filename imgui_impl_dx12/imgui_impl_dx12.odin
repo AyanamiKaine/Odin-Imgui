@@ -13,6 +13,9 @@ else when ODIN_OS == .Darwin  {
 	when ODIN_ARCH == .amd64 { foreign import lib "../imgui_darwin_x64.a" } else { foreign import lib "../imgui_darwin_arm64.a" }
 }
 
+// imgui_impl_dx12.h
+// Last checked `v1.91.7-docking` (960a6f1)
+
 // Initialization data, for ImGui_ImplDX12_Init()
 InitInfo :: struct {
 	Device:            ^d3d12.IDevice,
@@ -29,8 +32,6 @@ InitInfo :: struct {
 	SrvDescriptorFreeFn:  proc "c" (info: ^InitInfo, cpu_desc_handle: d3d12.CPU_DESCRIPTOR_HANDLE, gpu_desc_handle: d3d12.GPU_DESCRIPTOR_HANDLE),
 }
 
-// imgui_impl_dx12.h
-// Last checked `v1.91.6-docking` (a9cd0f5)
 @(link_prefix="ImGui_ImplDX12_")
 foreign lib {
 	// Follow "Getting Started" link and check examples/ folder to learn about using backends!

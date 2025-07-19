@@ -755,19 +755,19 @@ ComboPreviewData :: struct {
 
 // Stacked storage data for BeginGroup()/EndGroup()
 GroupData :: struct {
-	WindowID:                           ID,
-	BackupCursorPos:                    Vec2,
-	BackupCursorMaxPos:                 Vec2,
-	BackupCursorPosPrevLine:            Vec2,
-	BackupIndent:                       Vec1,
-	BackupGroupOffset:                  Vec1,
-	BackupCurrLineSize:                 Vec2,
-	BackupCurrLineTextBaseOffset:       f32,
-	BackupActiveIdIsAlive:              ID,
-	BackupActiveIdPreviousFrameIsAlive: bool,
-	BackupHoveredIdIsAlive:             bool,
-	BackupIsSameLine:                   bool,
-	EmitItem:                           bool,
+	WindowID:                     ID,
+	BackupCursorPos:              Vec2,
+	BackupCursorMaxPos:           Vec2,
+	BackupCursorPosPrevLine:      Vec2,
+	BackupIndent:                 Vec1,
+	BackupGroupOffset:            Vec1,
+	BackupCurrLineSize:           Vec2,
+	BackupCurrLineTextBaseOffset: f32,
+	BackupActiveIdIsAlive:        ID,
+	BackupDeactivatedIdIsAlive:   bool,
+	BackupHoveredIdIsAlive:       bool,
+	BackupIsSameLine:             bool,
+	EmitItem:                     bool,
 }
 
 // Simple column measurement, currently used for MenuItem() only.. This is very short-sighted/throw-away code and NOT a generic helper.
@@ -796,8 +796,10 @@ Stb_STB_TexteditState :: struct {
 InputTextState :: struct {
 	Ctx:                  ^Context,       // parent UI context (needs to be set explicitly by parent).
 	Stb:                  rawptr,         // State for stb_textedit.h
+	Flags:                InputTextFlags, // copy of InputText() flags. may be used to check if e.g. ImGuiInputTextFlags_Password is set.
 	ID_:                  ID,             // widget id owning the text state
 	TextLen:              c.int,          // UTF-8 length of the string in TextA (in bytes)
+	TextSrc:              cstring,        // == TextA.Data unless read-only, in which case == buf passed to InputText(). Field only set and valid _inside_ the call InputText() call.
 	TextA:                Vector_char,    // main UTF8 buffer. TextA.Size is a buffer size! Should always be >= buf_size passed by user (and of course >= CurLenA + 1).
 	TextToRevertTo:       Vector_char,    // value to revert to when pressing Escape = backup of end-user buffer at the time of focus (in UTF-8, unaltered)
 	CallbackTextBackup:   Vector_char,    // temporary storage for callback to support automatic reconcile of undo-stack
@@ -807,9 +809,8 @@ InputTextState :: struct {
 	CursorFollow:         bool,           // set when we want scrolling to follow the current cursor position (not always!)
 	SelectedAllMouseLock: bool,           // after a double-click to select all, we ignore further mouse drags to update selection
 	Edited:               bool,           // edited this frame
-	Flags:                InputTextFlags, // copy of InputText() flags. may be used to check if e.g. ImGuiInputTextFlags_Password is set.
-	ReloadUserBuf:        bool,           // force a reload of user buf so it may be modified externally. may be automatic in future version.
-	ReloadSelectionStart: c.int,          // POSITIONS ARE IN IMWCHAR units *NOT* UTF-8 this is why this is not exposed yet.
+	WantReloadUserBuf:    bool,           // force a reload of user buf so it may be modified externally. may be automatic in future version.
+	ReloadSelectionStart: c.int,
 	ReloadSelectionEnd:   c.int,
 }
 
@@ -857,11 +858,11 @@ NextItemData :: struct {
 // Status storage for the last submitted item
 LastItemData :: struct {
 	ID_:         ID,
-	ItemFlags:   ItemFlags,       // See ImGuiItemFlags_
+	ItemFlags:   ItemFlags,       // See ImGuiItemFlags_ (called 'InFlags' before v1.91.4).
 	StatusFlags: ItemStatusFlags, // See ImGuiItemStatusFlags_
 	Rect_:       Rect,            // Full rectangle
 	NavRect:     Rect,            // Navigation scoring rectangle (not displayed)
-	// Rarely used fields are not explicitly cleared, only valid when the corresponding ImGuiItemStatusFlags ar set.
+	// Rarely used fields are not explicitly cleared, only valid when the corresponding ImGuiItemStatusFlags are set.
 	DisplayRect: Rect,     // Display rectangle. ONLY VALID IF (StatusFlags & ImGuiItemStatusFlags_HasDisplayRect) is set.
 	ClipRect:    Rect,     // Clip rectangle at the time of submitting item. ONLY VALID IF (StatusFlags & ImGuiItemStatusFlags_HasClipRect) is set..
 	Shortcut:    KeyChord, // Shortcut at the time of submitting item. ONLY VALID IF (StatusFlags & ImGuiItemStatusFlags_HasShortcut) is set..
@@ -910,6 +911,14 @@ ShrinkWidthItem :: struct {
 PtrOrIndex :: struct {
 	Ptr:   rawptr, // Either field can be set, not both. e.g. Dock node tab bars are loose while BeginTabBar() ones are in a pool.
 	Index: c.int,  // Usually index in a main pool.
+}
+
+// Data used by IsItemDeactivated()/IsItemDeactivatedAfterEdit() functions
+DeactivatedItemData :: struct {
+	ID_:                 ID,
+	ElapseFrame:         c.int,
+	HasBeenEditedBefore: bool,
+	IsAlive:             bool,
 }
 
 // Storage for popup stacks (g.OpenPopupStack and g.BeginPopupStack)
@@ -1369,9 +1378,9 @@ Context :: struct {
 	FrameCountEnded:                    c.int,
 	FrameCountPlatformEnded:            c.int,
 	FrameCountRendered:                 c.int,
+	WithinEndChildID:                   ID,                 // Set within EndChild()
 	WithinFrameScope:                   bool,               // Set by NewFrame(), cleared by EndFrame()
 	WithinFrameScopeWithImplicitWindow: bool,               // Set by NewFrame(), cleared by EndFrame() when the implicit debug window has been pushed
-	WithinEndChild:                     bool,               // Set within EndChild()
 	GcCompactAll:                       bool,               // Request full GC
 	TestEngineHookItems:                bool,               // Will call test engine hooks: ImGuiTestEngineHook_ItemAdd(), ImGuiTestEngineHook_ItemInfo(), ImGuiTestEngineHook_Log()
 	TestEngine:                         rawptr,             // Test engine user data
@@ -1403,36 +1412,35 @@ Context :: struct {
 	WheelingWindowWheelRemainder:   Vec2,
 	WheelingAxisAvg:                Vec2,
 	// Item/widgets state and tracking information
-	DebugDrawIdConflicts:                     ID,          // Set when we detect multiple items with the same identifier
-	DebugHookIdInfo:                          ID,          // Will call core hooks: DebugHookIdInfo() from GetID functions, used by ID Stack Tool [next HoveredId/ActiveId to not pull in an extra cache-line]
-	HoveredId:                                ID,          // Hovered widget, filled during the frame
-	HoveredIdPreviousFrame:                   ID,
-	HoveredIdPreviousFrameItemCount:          c.int,       // Count numbers of items using the same ID as last frame's hovered id
-	HoveredIdTimer:                           f32,         // Measure contiguous hovering time
-	HoveredIdNotActiveTimer:                  f32,         // Measure contiguous hovering time where the item has not been active
-	HoveredIdAllowOverlap:                    bool,
-	HoveredIdIsDisabled:                      bool,        // At least one widget passed the rect test, but has been discarded by disabled flag or popup inhibit. May be true even if HoveredId == 0.
-	ItemUnclipByLog:                          bool,        // Disable ItemAdd() clipping, essentially a memory-locality friendly copy of LogEnabled
-	ActiveId:                                 ID,          // Active widget
-	ActiveIdIsAlive:                          ID,          // Active widget has been seen this frame (we can't use a bool as the ActiveId may change within the frame)
-	ActiveIdTimer:                            f32,
-	ActiveIdIsJustActivated:                  bool,        // Set at the time of activation for one frame
-	ActiveIdAllowOverlap:                     bool,        // Active widget allows another widget to steal active id (generally for overlapping widgets, but not always)
-	ActiveIdNoClearOnFocusLoss:               bool,        // Disable losing active id if the active id window gets unfocused.
-	ActiveIdHasBeenPressedBefore:             bool,        // Track whether the active id led to a press (this is to allow changing between PressOnClick and PressOnRelease without pressing twice). Used by range_select branch.
-	ActiveIdHasBeenEditedBefore:              bool,        // Was the value associated to the widget Edited over the course of the Active state.
-	ActiveIdHasBeenEditedThisFrame:           bool,
-	ActiveIdFromShortcut:                     bool,
-	ActiveIdMouseButton:                      c.int,
-	ActiveIdClickOffset:                      Vec2,        // Clicked offset from upper-left corner, if applicable (currently only set by ButtonBehavior)
-	ActiveIdWindow:                           ^Window,
-	ActiveIdSource:                           InputSource, // Activating source: ImGuiInputSource_Mouse OR ImGuiInputSource_Keyboard OR ImGuiInputSource_Gamepad
-	ActiveIdPreviousFrame:                    ID,
-	ActiveIdPreviousFrameIsAlive:             bool,
-	ActiveIdPreviousFrameHasBeenEditedBefore: bool,
-	ActiveIdPreviousFrameWindow:              ^Window,
-	LastActiveId:                             ID,          // Store the last non-zero ActiveId, useful for animation.
-	LastActiveIdTimer:                        f32,         // Store the last non-zero ActiveId timer since the beginning of activation, useful for animation.
+	DebugDrawIdConflicts:            ID,                  // Set when we detect multiple items with the same identifier
+	DebugHookIdInfo:                 ID,                  // Will call core hooks: DebugHookIdInfo() from GetID functions, used by ID Stack Tool [next HoveredId/ActiveId to not pull in an extra cache-line]
+	HoveredId:                       ID,                  // Hovered widget, filled during the frame
+	HoveredIdPreviousFrame:          ID,
+	HoveredIdPreviousFrameItemCount: c.int,               // Count numbers of items using the same ID as last frame's hovered id
+	HoveredIdTimer:                  f32,                 // Measure contiguous hovering time
+	HoveredIdNotActiveTimer:         f32,                 // Measure contiguous hovering time where the item has not been active
+	HoveredIdAllowOverlap:           bool,
+	HoveredIdIsDisabled:             bool,                // At least one widget passed the rect test, but has been discarded by disabled flag or popup inhibit. May be true even if HoveredId == 0.
+	ItemUnclipByLog:                 bool,                // Disable ItemAdd() clipping, essentially a memory-locality friendly copy of LogEnabled
+	ActiveId:                        ID,                  // Active widget
+	ActiveIdIsAlive:                 ID,                  // Active widget has been seen this frame (we can't use a bool as the ActiveId may change within the frame)
+	ActiveIdTimer:                   f32,
+	ActiveIdIsJustActivated:         bool,                // Set at the time of activation for one frame
+	ActiveIdAllowOverlap:            bool,                // Active widget allows another widget to steal active id (generally for overlapping widgets, but not always)
+	ActiveIdNoClearOnFocusLoss:      bool,                // Disable losing active id if the active id window gets unfocused.
+	ActiveIdHasBeenPressedBefore:    bool,                // Track whether the active id led to a press (this is to allow changing between PressOnClick and PressOnRelease without pressing twice). Used by range_select branch.
+	ActiveIdHasBeenEditedBefore:     bool,                // Was the value associated to the widget Edited over the course of the Active state.
+	ActiveIdHasBeenEditedThisFrame:  bool,
+	ActiveIdFromShortcut:            bool,
+	ActiveIdMouseButton:             c.int,
+	ActiveIdClickOffset:             Vec2,                // Clicked offset from upper-left corner, if applicable (currently only set by ButtonBehavior)
+	ActiveIdWindow:                  ^Window,
+	ActiveIdSource:                  InputSource,         // Activating source: ImGuiInputSource_Mouse OR ImGuiInputSource_Keyboard OR ImGuiInputSource_Gamepad
+	ActiveIdPreviousFrame:           ID,
+	DeactivatedItemData:             DeactivatedItemData,
+	ActiveIdValueOnActivation:       DataTypeStorage,     // Backup of initial value at the time of activation. ONLY SET BY SPECIFIC WIDGETS: DragXXX and SliderXXX.
+	LastActiveId:                    ID,                  // Store the last non-zero ActiveId, useful for animation.
+	LastActiveIdTimer:               f32,                 // Store the last non-zero ActiveId timer since the beginning of activation, useful for animation.
 	// Key/Input Ownership + Shortcut Routing system
 	// - The idea is that instead of "eating" a given key, we can link to an owner.
 	// - Input query can then read input by specifying ImGuiKeyOwner_Any (== 0), ImGuiKeyOwner_NoOwner (== -1) or a custom ID.

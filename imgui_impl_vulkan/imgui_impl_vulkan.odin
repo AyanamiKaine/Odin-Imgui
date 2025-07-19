@@ -10,7 +10,7 @@ else when ODIN_OS == .Darwin  {
 }
 
 // imgui_impl_vulkan.h
-// Last checked `v1.91.6-docking` (a9cd0f5)
+// Last checked `v1.91.7-docking` (d0d571e)
 
 // Initialization data, for ImGui_ImplVulkan_Init()
 // [Please zero-clear before use!]
