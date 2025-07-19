@@ -3,7 +3,7 @@ package imgui
 // This is a generated helper file which you can use to know about the build configuration.
 
 DEBUG_ENABLED :: false
-WASM_ENABLED :: true
+WASM_ENABLED :: false
 
 BACKEND_ALLEGRO5_ENABLED :: false
 BACKEND_ANDROID_ENABLED :: false

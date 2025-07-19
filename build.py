@@ -21,7 +21,7 @@ git_heads = {
 	"dear_bindings": "81c906b",
 }
 
-# Note - tested with Odin version `dev-2025-01`
+# Note - tested with Odin version `dev-2025-07`
 
 # @CONFIGURE: Elements must be keys into below table
 wanted_backends = ["vulkan", "sdl2", "opengl3", "sdlrenderer2", "glfw", "dx11", "dx12", "win32", "osx", "metal", "wgpu", "webgl"]

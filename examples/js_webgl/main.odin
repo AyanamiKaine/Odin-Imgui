@@ -56,7 +56,7 @@ step :: proc(dt: f64) -> (keep_going: bool) {
 	im.Render()
 
 	gl.ClearColor(0, 0, 0, 1)
-	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Clear(cast(u32)gl.COLOR_BUFFER_BIT)
 	imgui_impl_webgl.RenderDrawData(im.GetDrawData())
 
 	return true
