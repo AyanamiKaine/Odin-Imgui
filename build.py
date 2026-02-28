@@ -17,14 +17,14 @@ import random
 # @CONFIGURE: Must be key into below table
 # Note that the backend files and examples may also have to be updated, if you use these.
 git_heads = {
-	"imgui": "v1.91.7-docking",
-	"dear_bindings": "81c906b",
+	"imgui": "v1.92.6-docking",
+	"dear_bindings": "c252569",
 }
 
 # Note - tested with Odin version `dev-2025-07`
 
 # @CONFIGURE: Elements must be keys into below table
-wanted_backends = ["vulkan", "sdl2", "opengl3", "sdlrenderer2", "glfw", "dx11", "dx12", "osx", "metal", "wgpu", "webgl"]
+wanted_backends = ["vulkan", "sdl2", "sdl3", "opengl3", "sdlrenderer2", "sdlrenderer3", "glfw", "dx11", "dx12", "osx", "metal", "wgpu", "webgl"]
 # Supported means that an impl bindings file exists, and that it has been tested.
 # Some backends (like dx12, win32) have bindings but not been tested.
 backends = {
@@ -42,9 +42,9 @@ backends = {
 	"opengl3":      { "supported": True  },
 	"osx":          { "supported": False, "enabled_on": ["darwin"] },
 	"sdl2":         { "supported": True,  "deps": ["sdl2"] },
-	"sdl3":         { "supported": False },
+	"sdl3":         { "supported": True,  "deps": ["sdl3"] },
 	"sdlrenderer2": { "supported": True,  "deps": ["sdl2"] },
-	"sdlrenderer3": { "supported": False },
+	"sdlrenderer3": { "supported": True,  "deps": ["sdl3"] },
 	"vulkan":       { "supported": True,  "defines": ["VK_NO_PROTOTYPES"], "deps": ["vulkan"] },
 	"webgl":        { "supported": True,  "odin": True },
 	"wgpu":         { "supported": True,  "odin": True },
@@ -55,6 +55,7 @@ backends = {
 # Indirection for backend dependencies, as some might have the same dependency, and their commits can't get out of sync.
 backend_deps = {
 	"sdl2":   { "repo": "https://github.com/libsdl-org/SDL.git",               "commit": "release-2.28.3", "path": "SDL2" },
+    "sdl3":   { "repo": "https://github.com/libsdl-org/SDL.git",               "commit": "release-3.4.2",  "path": "SDL3" },
 	"glfw":   { "repo": "https://github.com/glfw/glfw.git",                    "commit": "3eaf125",        "path": "glfw" },
 	"vulkan": { "repo": "https://github.com/KhronosGroup/Vulkan-Headers.git",  "commit": "4f51aac",        "path": "Vulkan-Headers" },
 }

@@ -259,7 +259,7 @@ _imgui_bounds_value_overrides = {
 	# TODO: These can be evaluated with varying levels of effort
 	"32+1": "33",
 	"IM_DRAWLIST_TEX_LINES_WIDTH_MAX+1": str(int(IM_DRAWLIST_TEX_LINES_WIDTH_MAX+1)),
-	"(IM_UNICODE_CODEPOINT_MAX +1)/4096/8": str(int((IM_UNICODE_CODEPOINT_MAX +1)/4096/8)),
+	"(IM_UNICODE_CODEPOINT_MAX +1)/8192/8": str(int((IM_UNICODE_CODEPOINT_MAX +1)/8192/8)),
 }
 
 # Get array count for name. If not array, returns None
@@ -502,6 +502,8 @@ _allowed_ifdef = [
 	"IM_DRAWLIST_ARCFAST_TABLE_SIZE",
 	"IMGUI_ENABLE_STB_TRUETYPE",
 	"IMGUI_ENABLE_FREETYPE",
+	"IMGUI_STB_NAMESPACE",
+    "IMGUI_DEBUG_HIGHLIGHT_ALL_ID_CONFLICTS"
 ]
 
 _define_overrides = {
@@ -531,16 +533,16 @@ def condition_if(expression_str) -> bool:
 	# This is hardcoded for the path where we have [optional !, defined(, some_def, ), optional &&] and repeat
 	try:
 		while len(expression_str) > 0:
-			[expression_str, invert] = _chomp("!", expression_str)
-			[expression_str, ok] = _chomp("defined(", expression_str)
+			[expression_str, invert] = _chomp("!", expression_str.strip())
+			[expression_str, ok] = _chomp("defined(", expression_str.strip())
 			assert ok
-			[expression_str, found_str, ok] = _chomp_until(")", expression_str)
+			[expression_str, found_str, ok] = _chomp_until(")", expression_str.strip())
 			assert ok
-			[expression_str, ok] = _chomp(")", expression_str)
+			[expression_str, ok] = _chomp(")", expression_str.strip())
 			assert ok
 			if _ifdef(found_str) == invert: return False
-			[expression_str, ok] = _chomp("&&", expression_str)
-			if ok: assert len(expression_str) > 0
+			[expression_str, ok] = _chomp("&&", expression_str.strip())
+			if ok: assert len(expression_str.strip()) > 0
 	except:
 		die(f"Failed to parse expression_str: '{expression_str}'")
 		return False
@@ -663,6 +665,14 @@ def write_enum_as_flags(file, enum, enum_field_prefix, name):
 			continue
 		else:
 			# We're something weird
+			
+            # NavRenderCursorFlags_None is used for some argument default values
+			# as well as backward-compat names, so let's generate it
+			if enum["name"] == "ImGuiNavRenderCursorFlags_":
+				if element_value == "0" or element_value == "ImGuiNavRenderCursorFlags_None":
+					append_aligned_field(aligned_flags, [f'{name}_{element_name}', f' :: {name}{{}}'], element)
+					continue
+
 			if element_value == "0":
 				# This is the _None variant, which can be represented in Odin by {}
 				none_element_entire_name = element_entire_name
@@ -815,6 +825,8 @@ _imgui_struct_field_name_override = {
 	"LayoutType",
 	"DrawList",
 	"DockNode",
+	"FontBaked",
+	"ErrorCallback"
 }
 
 # These structs are defined properly if imgui_internal is included, but are
@@ -823,6 +835,8 @@ _imgui_struct_skip_if_not_imgui_internal = [
 	"ImDrawListSharedData",
 	"ImFontBuilderIO",
 	"ImGuiContext",
+	"ImFontAtlasBuilder",
+	"ImFontLoader",
 ]
 
 def write_structs(file: typing.IO, structs):
@@ -988,6 +1002,9 @@ _imgui_allowed_typedefs = [
 	"ImGuiContextHookCallback",
 	"ImFileHandle",
 	"ImGuiErrorLogCallback",
+	"ImGuiErrorCallback",
+	"stbrp_node_im",
+	"ImFontAtlasRectId",
 ]
 
 _imgui_typedef_overrides = {
