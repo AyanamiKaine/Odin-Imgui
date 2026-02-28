@@ -24,7 +24,7 @@ git_heads = {
 # Note - tested with Odin version `dev-2025-07`
 
 # @CONFIGURE: Elements must be keys into below table
-wanted_backends = ["vulkan", "sdl2", "sdl3", "opengl3", "sdlrenderer2", "sdlrenderer3", "glfw", "dx11", "dx12", "osx", "metal", "wgpu", "webgl"]
+wanted_backends = ["vulkan", "sdl2", "sdl3", "opengl3", "sdlrenderer2", "sdlrenderer3", "glfw", "dx11", "dx12", "osx", "metal", "wgpu", "webgl", "sdlgpu3"]
 # Supported means that an impl bindings file exists, and that it has been tested.
 # Some backends (like dx12, win32) have bindings but not been tested.
 backends = {
@@ -45,6 +45,7 @@ backends = {
 	"sdl3":         { "supported": True,  "deps": ["sdl3"] },
 	"sdlrenderer2": { "supported": True,  "deps": ["sdl2"] },
 	"sdlrenderer3": { "supported": True,  "deps": ["sdl3"] },
+    "sdlgpu3": { "supported": True,  "deps": ["sdl3"] },
 	"vulkan":       { "supported": True,  "defines": ["VK_NO_PROTOTYPES"], "deps": ["vulkan"] },
 	"webgl":        { "supported": True,  "odin": True },
 	"wgpu":         { "supported": True,  "odin": True },
@@ -229,6 +230,9 @@ def compile(backend_deps_names: typing.Set[str], all_sources: typing.List[str], 
 
 			if backend_name == "opengl3":
 				shutil.copy(pp("imgui/backends/imgui_impl_opengl3_loader.h"), "temp")
+
+			if backend_name == "sdlgpu3":
+				shutil.copy(pp("imgui/backends/imgui_impl_sdlgpu3_shaders.h"), "temp")
 
 			for define in backend.get("defines", []): compile_flags += [platform_select({ "windows": f"/D{define}", "linux, darwin": f"-D{define}" })]
 
